@@ -1,8 +1,20 @@
-
-
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <script>
+    // Apply theme before first paint to avoid a flash
+    (function () {
+      try {
+        var saved = localStorage.getItem('theme');
+        var theme = saved === 'light' || saved === 'dark'
+          ? saved
+          : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (_) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-CB6GTLS93M"></script>
   <script>
@@ -15,20 +27,25 @@
   <meta http-equiv="content-type" content="text/html; charset=UTF-8">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>レシート因子メーカー</title>
-  <meta property="og:title" content="レシート因子メーカー">
+  <meta name="theme-color" content="#efe6d3" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16120e" media="(prefers-color-scheme: dark)">
+  <title>Screenshot Stitcher</title>
+  <meta property="og:title" content="Screenshot Stitcher">
   <meta property="og:type" content="article">
-  <meta property="og:site_name" content="レシート因子メーカー">
-  <meta property="og:description" content="ウマ娘の因子やスキル一覧のスクリーンショットを連結出来ます。">
-  <meta property="og:url" content="https://lt900ed.github.io/receipt_factor">
-  <meta property="og:image" content="https://lt900ed.github.io/receipt_factor/img/header.jpg">
-  <meta name="twitter:site" content="@lt900ed">
+  <meta property="og:site_name" content="Screenshot Stitcher">
+  <meta property="og:description" content="Stitch together scrolling screenshots of factor and skill lists from Uma Musume.">
+  <meta property="og:url" content="https://daftuyda.github.io/stitcher">
+  <meta property="og:image" content="https://daftuyda.github.io/stitcher/img/header.jpg">
+  <meta name="twitter:site" content="@maybevoidyt">
   <meta name="twitter:card" content="photo">
   <!-- favicon -->
   <link rel="icon" href="./favicon.ico" sizes="32x32"><!-- 32×32 -->
   <link rel="icon" href="./img/favicon/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./img/favicon/apple-touch-icon.png"><!-- 180×180 -->
   <link rel="manifest" href="./img/favicon/manifest.webmanifest">
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- CSS -->
   <link rel="stylesheet" href="./css/reset.css" type="text/css">
   <link rel="stylesheet" href="./css/common.css" type="text/css">
@@ -36,7 +53,7 @@
   <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
 </head>
 <body class="body">
-  <!-- ローディング画面 -->
+  <!-- Loading screen -->
   <div id="loading" class="hidden">
     <div class="sk-fading-circle">
       <div class="sk-circle1 sk-circle"></div>
@@ -55,8 +72,15 @@
     <div id="percentage" class="">100%</div>
   </div>
   <header id="pageHeader">
-    <div class="logo">
-      <h1><a href="./">レシート因子メーカー</a></h1>
+    <div class="masthead">
+      <div class="logo">
+        <h1>Screenshot Stitcher</h1>
+      </div>
+      <button class="theme-toggle" type="button" id="themeToggle" aria-label="Toggle color theme">
+        <svg class="glyph glyph-dark" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="glyph glyph-light" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <span class="theme-toggle-label">Theme</span>
+      </button>
     </div>
   </header>
   <div class="toolbar">
@@ -65,24 +89,17 @@
   </div>
   <div class="wrapper">
     <article id="detail">
-      <section id="infomation">
-        <h3>お知らせ(2025/7/28)</h3>
-        <div class="markdown-body editormd-preview-container" id="infomation_text">
-          <p>Steam版のスクショに対応しました。まだ不安定なのでうまく繋がらなかった時は、<a href="https://x.com/lt900ed/status/1949596234991501523" target="_blank" rel="noopener">こちらのポスト</a>にリプする形で使ったスクショを報告してもらえると助かります。<p>
-        </div>
-      </section>
       <section id="top">
         <form method="post" enctype="multipart/form-data">
           <div id="dragDropArea">
             <div class="drag-drop-inside">
-              <p class="drag-drop-info">ここにファイルをドロップ</p>
+              <p class="drag-drop-info">Drop files here</p>
               <p></p>
               <p class="drag-drop-buttons">
-                or <input id="fileInput" type="file" accept="image/*" multiple="multiple" value="ファイルを選択" name="photo" onChange="photoPreview(event)">
+                or <input id="fileInput" type="file" accept="image/*" multiple="multiple" value="Choose files" name="photo" onChange="photoPreview(event)">
               </p>
-              <p id="uiUploadFromClipboard">or <button type="button" id="btnUploadFromClipboard">クリップボードから貼り付け</button></p>
-              <p>自動で並び替えるので順番は気にしなくてOK！</p>
-              <p>※手動で切り出したスクショは未対応です。PC版であればAlt+PrintScreenなど、ウマ娘のウィンドウを自動で切り出す機能でスクショを用意して下さい。</p>
+              <p id="uiUploadFromClipboard">or <button type="button" id="btnUploadFromClipboard">Paste from clipboard</button></p>
+              <p>* Manually cropped screenshots are not supported. On PC, please use a feature that captures the Uma Musume window automatically, such as Alt+PrintScreen.</p>
             </div>
           </div>
           <div id="PreAlert">
@@ -94,25 +111,25 @@
           </div>
           <div id="formOption">
             <div class="formItem">
-              <!-- <label>オプション</label> -->
+              <!-- <label>Options</label> -->
               <div class="inputWrap">
                 <ul>
                   <li>
                     <div class="considerWrap">
                       <input type="checkbox" class="checkInput" id="showHeader" checked>
-                      <label class="checkLabel" for="showHeader">ヘッダーの表示</label>
+                      <label class="checkLabel" for="showHeader">Show header</label>
                     </div>
                   </li>
                   <li>
                     <div class="considerWrap">
                       <input type="checkbox" class="checkInput" id="showSkillIcon">
-                      <label class="checkLabel" for="showSkillIcon">因子にスキルアイコン追加(β)</label>
+                      <label class="checkLabel" for="showSkillIcon">Add skill icons to factors (β)</label>
                     </div>
                   </li>
                   <!-- <li>
                     <div class="considerWrap">
                       <input type="checkbox" class="checkInput" id="considerEquips">
-                      <label class="checkLabel" for="considerEquips">閉じるボタン</label>
+                      <label class="checkLabel" for="considerEquips">Close button</label>
                     </div>
                   </li> -->
                 </ul>
@@ -120,130 +137,160 @@
             </div>
           </div>
           <div class="buttonArea">
-            <button id="btnSubmit" type="button" class="btn disable cvNotReady imgNotReady" name="submit" value="作成" onclick="generatePhoto();return false;">作成</button>
-            <button id="btnReset" type="button" class="btn disable weak imgNotReady" name="cancel" value="リセット" onclick="location.reload();return false;">リセット</button>
+            <button id="btnSubmit" type="button" class="btn disable cvNotReady imgNotReady" name="submit" value="Generate" onclick="generatePhoto();return false;">Generate</button>
+            <button id="btnReset" type="button" class="btn disable weak imgNotReady" name="cancel" value="Reset" onclick="resetPhoto();return false;">Reset</button>
           </div>
         </form>
       </section>
       <hr>
       <section id="overview">
         <div id="SaveBtnArea" class="buttonArea hidden">
-          <button id="btnSaveJPG" class="btn weak" value="JPGで保存" onclick="SaveOriginal(document.getElementById('canvasOutput'), 'jpg');return false;">JPGで保存</button>
-          <button id="btnSavePNG" class="btn weak" value="PNGで保存" onclick="SaveOriginal(document.getElementById('canvasOutput'), 'png');return false;">PNGで保存</button>
-          <button id="btnSaveClipBoard" class="btn weak" value="📋にコピー" onclick="SaveToClipBoard(document.getElementById('canvasOutput'));return false;">📋にコピー</button>
+          <button id="btnSaveJPG" class="btn weak" value="Save as JPG" onclick="SaveOriginal(document.getElementById('canvasOutput'), 'jpg');return false;">Save as JPG</button>
+          <button id="btnSavePNG" class="btn weak" value="Save as PNG" onclick="SaveOriginal(document.getElementById('canvasOutput'), 'png');return false;">Save as PNG</button>
+          <button id="btnSaveClipBoard" class="btn weak" value="Copy to 📋" onclick="SaveToClipBoard(document.getElementById('canvasOutput'));return false;">Copy to 📋</button>
         </div>
-        <p id="outputAreaText" class="overviewTitle">ここに結果が表示されます</p>
-        <p id="toggleSizeText" class="overviewTitle hidden">画像タップで表示サイズ切り替え</p>
+        <p id="outputAreaText" class="overviewTitle">Result will appear here</p>
+        <p id="toggleSizeText" class="overviewTitle hidden">Tap the image to toggle display size</p>
         <img id="outputImage" class="hidden" src="">
         <div id="overviewOCRResult" class="hidden">
           <div class="editormd-preview-container">
-            <p class="overviewSubTitle">・検出精度向上のご協力のお願い</p>
-            <p>スキルアイコンの表示機能の精度を向上させるため因子名の誤検出パターンを収集しています。<br>
-            下のテキスト欄に表示されている検出結果をコピーし<a href="https://forms.gle/wFntwkAQKgbsniZH9" target="_blank" rel="noopener">専用フォーム</a>にお送り下さい。<br>
-            より多くのレシート因子に使えるようになるためご協力お願い致します。</p>
+            <p class="overviewSubTitle">・Help us improve detection accuracy</p>
+            <p>We're collecting misdetected factor name patterns to improve the skill icon feature.<br>
+            Please copy the detection results from the text box below and report them on <a href="https://github.com/daftuyda/Stitcher/issues" target="_blank" rel="noopener">GitHub Issues</a>.<br>
+            Your contribution helps us support more receipt factors.</p>
           </div>
           <textarea id="outputOCRResult" cols="50" rows="3" onclick="this.select()"></textarea>
         </div>
       </section>
       <hr>
       <section id="howto">
-        <h3>使い方</h3>
+        <details class="collapsible" open>
+          <summary><h3>How to use</h3></summary>
         <div class="markdown-body editormd-preview-container" id="memo_text">
-          <p>1.画面をスクロールしながらスクリーンショットを撮る<br>
-          ・殿堂入りウマ娘のスキル、継承、育成情報タブ、チムレスコア情報、出走ウマ娘画面に対応しています。<br>
-          ・少なくとも二行ずつ重なるように撮影して下さい。<br>
-          ・スマホの通知などウマ娘の画面以外のものが映らないようにして下さい。<br>
-          ・Ver3.0からサポカ一覧、着順表など大体のスクロールする画面に対応しました。<br>
-          　これらの画面の場合はスクロール部分の約1/4が重なるように撮影して下さい。<br>
-          ・Ver3.1からチャンミ号外の連結に対応しました。<br>
-          　こちらは必ず横配置となります。左右の順番は画像の取り込み順と同じになります。<br>
-          <p>2.当サイトにスクリーンショットを取り込む<br>
-          ・取り込む順番は自由です。加工時に自動で並び替えます。<br>
-          ・不要な画像は各プレビュー画像左上の✕をタップで削除出来ます。<br>
-          ・複数キャラまとめて取り込めます。<br>
-          ・クリップボードから貼り付けは対応しているブラウザ・OSでのみ使用できます。<br>
-          　Windows 11のChrome、Edgeで動作確認しています。<br>
-          　クリップボードから貼り付けはCtrl+Vでも行なえます。</p>
-          <p>3.作成ボタンをタップ<br>
-          ・取り込んだ画像の枚数に応じて即座～数十秒時間がかかります。<br>
-          ・上手く重なり方が特定出来なかった場合単純に上下に連結します。</p>
-          <p>4.出力されたレシート画像を確認して保存ボタンをタップ<br>
-          ・複数キャラ取り込んだ場合左右に並べて出力されます。<br>
-          ・出力された画像をタップすると等倍表示と画面幅に合わせて表示を切り替えられます。<br>
-          ・リセットボタンで全てのプレビュー画像と出力結果を削除して最初からやり直せます。<br>
-          ・iOSで画像アプリに保存したい場合は画像長押しから保存して下さい。<br>
-          ・クリップボードにコピーは対応しているブラウザ・OSでのみ使用できます。<br>
-          　Windows 11のChrome、Edgeで動作確認しています。</p>
-          <p>β.因子にスキルアイコン追加<br>
-          ・各因子にスキルアイコンを追加します。<br>
-          ・シナリオ因子等の能力が上昇する因子は青いアイコンを追加します。<br>
-          ・因子名をうまく取得出来なかった場合には[？]が追加されます。<br>
-          ・取り込んだ画像の解像度が低いほど精度が下がります。縦幅1500px以上の画像を推奨します。<br>
-          ・スキル情報は<a href="https://ウマ娘.攻略.tools/" target="_blank" rel="noopener">U-tools</a>さんからご提供頂いています。</p>
+          <p><b>1. Take your screenshots</b><br>
+          ・Scroll through the screen and take screenshots as you go.<br>
+          ・Each screenshot should overlap the next by at least two rows.<br>
+          ・Make sure nothing outside the game window is captured (notifications, taskbars, etc).<br>
+          ・Most scrollable screens are supported, including factor / skill / inheritance / training tabs, finish-order tables, score info, entry lists, and support card lists.</p>
+
+          <p><b>2. Load the screenshots</b><br>
+          ・Drag and drop, choose files, or paste from the clipboard (Ctrl+V).<br>
+          ・Drag the previews to reorder them; click one to see it full-size.<br>
+          ・You can load multiple characters at once.<br>
+          ・Tap the ✕ on a preview to remove it.</p>
+
+          <p><b>3. Tap Generate</b><br>
+          ・Takes anywhere from instant to a few seconds depending on how many images you loaded.</p>
+
+          <p><b>4. Save the result</b><br>
+          ・Tap the output image to switch between full size and fit-to-width.<br>
+          ・Use the JPG / PNG / 📋 buttons to save.<br>
+          ・On iOS, long-press the image to save it to your photo library.<br>
+          ・Reset clears everything so you can start over.</p>
+
+          <p><b>Optional: skill icons (β)</b><br>
+          ・Adds a small skill icon next to each factor.<br>
+          ・Stat-boosting factors (e.g. scenario factors) show a blue icon.<br>
+          ・If the factor name can't be read clearly, [?] shows instead.<br>
+          ・Higher-resolution screenshots give better results — at least 1500px tall is recommended.<br>
+          ・Skill data provided by <a href="https://ウマ娘.攻略.tools/" target="_blank" rel="noopener">U-tools</a>.</p>
         </div>
+        </details>
       </section>
       <hr>
       <section id="updateLog">
-        <h3>アップデート履歴</h3>
+        <details class="collapsible">
+          <summary><h3>Update history</h3></summary>
         <div class="markdown-body editormd-preview-container">
           <p>
-            Ver1.0：初公開<br>
-            Ver1.01：隣接画像検出ロジック修正<br>
-            Ver1.02：出力結果の表示サイズ切り替え機能追加、閉じるボタン複数検出時の挙動修正<br>
-            Ver1.1：クリップボードからの画像読み込み、クリップボードへの結果貼り付けに対応<br>
-            Ver1.11：大量の画像または解像度の高い画像を読み込んだ時の動作を改善<br>
-            Ver1.12：閉じるボタンより下が写っていなくても連結出来るよう修正<br>
-            Ver1.13：出力結果の背景色が指定されていなかった問題を修正<br>
-            Ver1.2：処理の進捗表示を追加<br>
-            Ver1.3：ヘッダー表示オプション追加、スクロールバーの非表示化<br>
-            Ver1.4：他ユーザーのウマ娘など通常と異なるいくつかのレイアウトに対応<br>
-            Ver1.41：GooglePlayGames版の横長な画像の取り込みに対応<br>
-            Ver1.42：異なるレイアウトの画像を同時に読み込んだ際に結果が歪む問題を修正<br>
-            Ver1.43：連結部分の切れ目が出にくくなるよう調整<br>
-            Ver1.44：少し暗いスクリーンショットの取り込みに暫定対応<br>
-            Ver1.45：位置が特定出来ない画像があった場合末尾に単純結合するよう修正<br>
-            Ver1.5：結合時のズレが生じにくくなるよう修正<br>
-            Ver1.51：閉じるボタンの輪郭が薄くても検出できるよう調整<br>
-            Ver1.6：Ctrl+Vで📋から貼り付け出来る機能を追加<br>
-            Ver1.61：閉じるボタンの検出が失敗しにくくなるよう修正<br>
-            Ver1.62：新機能のための内部ロジック一部修正、隣接判定のしきい値調整<br>
-            Ver2.0：スキルアイコン表示機能追加(β版) 協力：<a href="https://ウマ娘.攻略.tools/" target="_blank" rel="noopener">U-tools</a>さん<br>
-            Ver2.01：閉じるボタン検出時のしきい値を微調整<br>
-            Ver2.02：ラッキーセブン因子のアイコンが表示出来ない問題を修正<br>
-            Ver2.1：着順表、チムレスコア情報、出走ウマ娘画面に対応<br>
-            Ver2.11：レース詳細画面に対応<br>
-            Ver3.0：大体のスクロールする画面に対応<br>
-            Ver3.1：チャンミ号外の横配置に対応<br>
-            Ver3.11：ウマ娘一覧等最下部に固定ボタンがある画面でも連結されやすくなるよう修正<br>
-            Ver3.12：同じウマ娘でもタブが異なる場合横に並べるように修正<br>
-            Ver3.2：特定レイアウトでスクロールバーに基づいて順序を特定するよう修正<br>
-            Ver3.21：スクロールバーの長さが異なる画像が混ざっている場合、スクロールバーに基づく配置を行わないよう修正、画像の取り込み順次第で結果が変わることがあった不具合を修正、その他色々不具合修正<br>
-            Ver3.22：因子名の位置取得ロジック変更<br>
-            Ver3.23：因子画面以外でスキルアイコン追加処理を行わないよう修正<br>
-            Ver3.24：青赤緑因子に？を追加しないよう修正<br>
-            Ver3.25：findLastIndexが呼び出せなかったら実行前にエラーになるよう修正<br>
-            Ver3.26：favicon追加<br>
-            Ver3.31：Steam版暫定対応<br>
-            Ver3.32：過度に左右がトリミングされる場合がある問題修正<br>
-            Ver3.33：汎用連結処理が上手く行かない場合がある問題修正<br>
+            Ver1.0: Initial release<br>
+            Ver1.01: Fixed adjacent-image detection logic<br>
+            Ver1.02: Added output display size toggle; fixed behavior when multiple close buttons are detected<br>
+            Ver1.1: Added support for loading from clipboard and copying result to clipboard<br>
+            Ver1.11: Improved behavior when loading many or high-resolution images<br>
+            Ver1.12: Fixed so stitching works even when content below the close button isn't visible<br>
+            Ver1.13: Fixed the result background color not being set<br>
+            Ver1.2: Added processing progress indicator<br>
+            Ver1.3: Added header display option; hides scrollbar<br>
+            Ver1.4: Added support for some non-standard layouts (e.g. other users' Uma Musume)<br>
+            Ver1.41: Added support for the wide-format images from the Google Play Games version<br>
+            Ver1.42: Fixed distorted output when loading images of different layouts together<br>
+            Ver1.43: Tweaked stitching to reduce visible seams<br>
+            Ver1.44: Provisional support for slightly darker screenshots<br>
+            Ver1.45: When some images can't be positioned, they're now appended to the end<br>
+            Ver1.5: Reduced misalignment during stitching<br>
+            Ver1.51: Tweaked detection so faint close-button outlines are still recognized<br>
+            Ver1.6: Added Ctrl+V to paste from 📋<br>
+            Ver1.61: Made close-button detection more robust<br>
+            Ver1.62: Internal logic tweaks for upcoming features; adjusted adjacency thresholds<br>
+            Ver2.0: Added skill icon display feature (β). Thanks to <a href="https://ウマ娘.攻略.tools/" target="_blank" rel="noopener">U-tools</a>!<br>
+            Ver2.01: Fine-tuned close-button detection threshold<br>
+            Ver2.02: Fixed missing icon for Lucky Seven factor<br>
+            Ver2.1: Added support for finish-order table, Champions Meet score info, and entry list screens<br>
+            Ver2.11: Added support for race detail screen<br>
+            Ver3.0: Added support for most scrollable screens<br>
+            Ver3.1: Added horizontal layout for Champions Meet bulletins<br>
+            Ver3.11: Improved stitching for screens with bottom-pinned buttons (e.g. Uma Musume list)<br>
+            Ver3.12: Same Uma Musume on different tabs now placed side-by-side<br>
+            Ver3.2: For certain layouts, ordering is now determined from the scrollbar position<br>
+            Ver3.21: Disabled scrollbar-based ordering when scrollbar lengths differ; fixed inconsistent results based on load order; misc fixes<br>
+            Ver3.22: Updated factor-name position detection<br>
+            Ver3.23: Skip skill-icon processing on non-factor screens<br>
+            Ver3.24: Stopped adding ? to blue/red/green factors<br>
+            Ver3.25: Now errors out before running if findLastIndex isn't available<br>
+            Ver3.26: Added favicon<br>
+            Ver3.31: Provisional Steam version support<br>
+            Ver3.32: Fixed cases where left/right were trimmed too aggressively<br>
+            Ver3.33: Fixed cases where generic stitching didn't work well<br>
+            Ver4.01: Translated the site to English<br>
+            Ver4.02: Fixed the "your browser is too old" warning so it actually shows up when it should<br>
+            Ver4.03: Internal code cleanup — no change to how the site behaves<br>
+            Ver4.04: Removed an accidental duplicate setting<br>
+            Ver4.05: The "stitched by scrollbar position" notice no longer flashes multiple times in a row<br>
+            Ver4.06: Reduced memory used while figuring out the scroll area<br>
+            Ver4.07: Reduced memory used while handling unfamiliar screen layouts<br>
+            Ver4.08: Reduced memory used while resizing and joining images<br>
+            Ver4.09: Reduced memory used while picking out colored pixels<br>
+            Ver4.10: Reduced memory used while identifying which screen each screenshot is from<br>
+            Ver4.11: Reduced memory used while slicing each screenshot into parts<br>
+            Ver4.12: Fixed a potential crash from cleaning up the same memory twice<br>
+            Ver4.13: Fixed broken skill-icon detection caused by a memory bug<br>
+            Ver4.14: Stitching is much faster on large screenshots — replaced slow pixel-by-pixel scanning with bulk reads<br>
+            Ver4.15: Repeat runs are faster — reference images are now loaded once per visit instead of once per screenshot<br>
+            Ver4.16: Skill-icon detection is faster — the factor template no longer reloads on every factor<br>
+            Ver4.17: Grouping screenshots by character is faster — comparison data is reused across pairs<br>
+            Ver4.18: Skill-icon mode starts almost instantly on later runs instead of reloading the Japanese OCR model every time<br>
+            Ver4.19: Status messages no longer vanish early when a new one appears right after<br>
+            Ver4.20: The loading spinner no longer gets stuck if an image fails to load<br>
+            Ver4.21: Fixed a potential crash when stitching certain layouts that don't have a header<br>
+            Ver4.22: If stitching fails partway through, the next attempt is no longer affected by leftover state<br>
+            Ver4.23: Removed an unused setting that was disabled anyway<br>
+            Ver4.24: Removed about 200 lines of dead code<br>
+            Ver4.25: Layout matching with masks is faster — fewer redundant color conversions per comparison<br>
+            Ver4.26: Reset no longer reloads the page — keeps OpenCV, the Japanese OCR model, and templates in memory so the next Generate is fast<br>
+            Ver4.27: PC/Steam screenshots stitch better — tighter crop, more reliable overlap detection<br>
+            Ver4.28: Stopped misaligning screenshots that only share a section header but no actual content<br>
+            Ver4.29: Unmatched screenshots now keep your load order instead of always going to the bottom<br>
+            Ver4.30: Tighter check on PC/Steam matches to avoid wrong alignments from list rows that look similar but aren't<br>
+            Ver4.31: No more duplicate rows at the seam between two screenshots<br>
+            Ver4.32: Drag preview thumbnails to reorder them, or click one to see it full-size<br>
           </p>
         </div>
+        </details>
       </section>
       <hr>
     </article>
   </div>
   <footer>
-    <p class="resources">ご意見ご要望:
-      <a href="https://twitter.com/lt900ed" target="_blank" rel="noopener">@lt900ed</a>
-      <a href="https://forms.gle/G5Mryrjc9uCBbUay5" target="_blank" rel="noopener">Googleフォーム</a>
+    <p class="resources">Feedback:
+      <a href="https://github.com/daftuyda/Stitcher/issues" target="_blank" rel="noopener">GitHub Issues</a>
     </p>
-    <p class="resources">アイコン提供:
+    <p class="resources">Icons by:
       <a href="https://twitter.com/38_3so" target="_blank" rel="noopener">@38_3so</a>
     </p>
-    <p class="resources">ご支援:
-      <a href="https://www.amazon.jp/hz/wishlist/ls/1EJOGGP8S1TS6?ref_=wl_share" target="_blank" rel="noopener">欲しいものリスト</a>
+    <p class="resources">Support the original creator:
+      <a href="https://www.amazon.jp/hz/wishlist/ls/1EJOGGP8S1TS6?ref_=wl_share" target="_blank" rel="noopener">Wishlist</a>
     </p>
-    <p class="resources"><a href="./">レシート因子メーカー</a></p>
   </footer>
   <script src="./js/dict_skills.js"></script>
   <script src="./js/regexps.js"></script>

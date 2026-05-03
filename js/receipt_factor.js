@@ -34,7 +34,6 @@ const rect_prop = {
   header_text_field: [639, 74, 258, 61],
   header_text_race_detail: [639, 74, 258, 61],
   header_text_gougai: [506, 74, 524, 61],
-  factor_text_left: [469, 0, 372, 33],
 };
 rect_prop['header'] = [rect_prop['whole'][0], rect_prop['whole'][1], rect_prop['whole'][2], 100];
 rect_prop['basic_info'] = [rect_prop['header'][0], rect_prop['header'][1] + rect_prop['header'][3], rect_prop['header'][2], 700];
@@ -111,6 +110,8 @@ function add_rect_prop(rect_prop, rect_prop_dynamic, rayout_type) {
 const thres_gray = 215;
 const thres_cont_close = 0.1;
 const thres_match_tmpl = 0.8;
+// 汎用レイアウト（PC/Steam版など、テンプレ未対応UI）はマッチしきい値を緩める
+const thres_match_tmpl_common = 0.5;
 const thres_match_tmpl_basic_info = 0.85;
 const thres_match_tmpl_higher = 0.55;
 const thres_match_tmpl_rayout_type = 0.6;
@@ -120,13 +121,20 @@ const thres_header = 0.9;
 const thres_common_diff_y1 = 20;
 const thres_common_diff_y2 = 12;
 const thres_pf_rayout_diff_x = 2;
+// 汎用マスク生成時の差分しきい値（0だと antialias / 描画ノイズで mask=255 になり過ぎる）
+const thres_common_msk = 12;
+// 重なり領域がスクロール部分のこの割合より小さいマッチは捨てる
+// （サブセクションのヘッダ帯（青/ピンクの縦角丸）だけで形状一致する false positive を除外）
+const thres_min_overlap_ratio = 0.18;
+// 汎用レイアウト用の二段目しきい値。一覧UIは行構造が均一でTM_CCOEFF_NORMEDが
+// 形状類似だけで0.6〜0.7台を出してしまうため、本物の重なり時の0.9+のみ通すよう厳しめに。
+const thres_match_tmpl_common_higher = 0.85;
 const thres_scroll_bar_position = 210;
 const thres_scbar_h = 0.90;
 const thres_1factor = 140;
 const thres_1factor_color = 0.3;
 
 // パラメータ
-const force_one_group = false;
 const all_rayout_type = ['normal', 'with_growth_rate', 'with_register_partner', 'result_table', 'score_info', 'score_detail', 'field', 'race_detail', 'gougai', 'common_scroll_only', 'common_header_scroll'];
 const load_parts = ['header', 'basic_info', 'tab', 'scroll_full_width', 'scroll', 'scroll_bar', 'bottom_row', 'bottom_row_higher', 'icon', 'eval_val', 'speed_val', 'stamina_val', 'power_val', 'guts_val', 'int_val'];
 const load_parts_simple = ['header', 'basic_info', 'scroll_full_width', 'scroll', 'scroll_bar', 'bottom_row', 'bottom_row_higher'];
@@ -150,7 +158,9 @@ const load_parts_by_rayout_type = {
   'common_1picture': load_parts_1picture,
 }
 const diff_window_size = 32;
-const trim_width_buffer = 0.1;
+// PC/Steam版は検出範囲が概ねパネル境界と一致するので、
+// 旧来の10%バッファだと背景の空・草・パーティクルアニメまで取り込んでしまい後段マッチを汚す
+const trim_width_buffer = 0.03;
 
 function fn_sum(arr, fn) {
   if (fn) {
@@ -168,13 +178,13 @@ function fn_avg(arr, fn) {
 function vconcat_resize_min(im_list, interpolation = cv.INTER_CUBIC) {
   const w_min = Math.min(...im_list.map((d) => {return d.cols}));
   let im_list_resize = new cv.MatVector();
-  let dst = new cv.Mat();
   let dsize = new cv.Size();
   for (let i = 0; i < im_list.length; i++) {
-    dst = new cv.Mat();
+    let dst = new cv.Mat();
     dsize = new cv.Size(w_min, Math.floor(im_list[i].rows * w_min / im_list[i].cols));
     cv.resize(im_list[i], dst, dsize, 0, 0, interpolation);
     im_list_resize.push_back(dst);
+    dst.delete();
   };
   let out = new cv.Mat();
   cv.vconcat(im_list_resize, out);
@@ -257,48 +267,93 @@ function match_tmpl_min_max_loc(img_tgt, img_tmpl) {
   dst.delete();
   return out;
 }
-function match_tmpl_with_msk_min_max_loc(img_tgt, img_tmpl, img_msk) {
+// img_msk_gray は CV_8UC1（gene_common_msk の戻り値が grayになったため、ここでは追加変換不要）
+function match_tmpl_with_msk_min_max_loc(img_tgt, img_tmpl, img_msk_gray) {
   let dst = new cv.Mat();
   let out = null;
   // マスクなしと比べて遅すぎるのでモノクロで比較
   let img_tgt_gray = new cv.Mat();
   let img_tmpl_gray = new cv.Mat();
-  let img_msk_gray = new cv.Mat();
   cv.cvtColor(img_tgt, img_tgt_gray, cv.COLOR_RGBA2GRAY, 0);
   cv.cvtColor(img_tmpl, img_tmpl_gray, cv.COLOR_RGBA2GRAY, 0);
-  cv.cvtColor(img_msk, img_msk_gray, cv.COLOR_RGBA2GRAY, 0);
   cv.matchTemplate(img_tgt_gray, img_tmpl_gray, dst, cv.TM_CCOEFF_NORMED, img_msk_gray);
   out = cv.minMaxLoc(dst);
   dst.delete();
   img_tgt_gray.delete();
   img_tmpl_gray.delete();
-  img_msk_gray.delete();
   return out;
 }
+// gray の単チャンネルマスクを返す。呼び出し側は match_tmpl_with_msk_min_max_loc にそのまま渡せる
+// しきい値0だとantialias/描画ノイズで全画素mask=255になりがちなので thres_common_msk を使う
 function gene_common_msk(img_tmpl, img_tgt) {
+  let img_0_gray = new cv.Mat();
+  let img_1_gray = new cv.Mat();
   let tmp_diff = new cv.Mat();
-  let img_0_gray = img_tmpl.clone();
-  let img_1_gray = img_tgt.clone();
-  cv.cvtColor(img_0_gray, img_0_gray, cv.COLOR_RGBA2GRAY, 0);
-  cv.cvtColor(img_1_gray, img_1_gray, cv.COLOR_RGBA2GRAY, 0);
+  cv.cvtColor(img_tmpl, img_0_gray, cv.COLOR_RGBA2GRAY, 0);
+  cv.cvtColor(img_tgt, img_1_gray, cv.COLOR_RGBA2GRAY, 0);
   cv.absdiff(img_0_gray, img_1_gray, tmp_diff);
-  cv.threshold(tmp_diff, tmp_diff, 0, 255, cv.THRESH_BINARY);
-  cv.cvtColor(tmp_diff, tmp_diff, cv.COLOR_GRAY2RGB, 0);
-
-  // let img_msk = cv.Mat.zeros(img_0_gray.rows, img_0_gray.cols, cv.CV_8UC3);
-  // for (let i = 0; i < img_0_gray.rows; i++) {
-  //   for (let j = 0; j < img_0_gray.cols; j++) {
-  //     if (tmp_diff.ucharAt(i, j) > 0) {
-  //       img_msk.ucharPtr(i, j)[0] = 255;
-  //       img_msk.ucharPtr(i, j)[1] = 255;
-  //       img_msk.ucharPtr(i, j)[2] = 255;
-  //     }
-  //   }
-  // }
-  // tmp_diff.delete();
+  cv.threshold(tmp_diff, tmp_diff, thres_common_msk, 255, cv.THRESH_BINARY);
   img_0_gray.delete();
   img_1_gray.delete();
   return tmp_diff;
+}
+// 8bit単チャンネルMat（CV_8UC1）を pure-JS でアクセスするためのヘルパー
+// ucharAt はWasm境界呼び出しが per-pixel で発生して遅いので、
+// データを一度だけTypedArrayとして取得して JS 側で集計する
+function row_sums_uchar(mat) {
+  const rows = mat.rows;
+  const cols = mat.cols;
+  const data = mat.data;
+  const step = mat.step[0] || cols;
+  let out = new Array(rows);
+  for (let i = 0; i < rows; i++) {
+    let s = 0;
+    const base = i * step;
+    for (let j = 0; j < cols; j++) {
+      s += data[base + j];
+    }
+    out[i] = s;
+  }
+  return out;
+}
+function col_sums_uchar(mat) {
+  const rows = mat.rows;
+  const cols = mat.cols;
+  const data = mat.data;
+  const step = mat.step[0] || cols;
+  let out = new Array(cols).fill(0);
+  for (let i = 0; i < rows; i++) {
+    const base = i * step;
+    for (let j = 0; j < cols; j++) {
+      out[j] += data[base + j];
+    }
+  }
+  return out;
+}
+function total_sum_uchar(mat) {
+  const data = mat.data;
+  const len = data.length;
+  let s = 0;
+  for (let i = 0; i < len; i++) s += data[i];
+  return s;
+}
+// テンプレ画像のRGB化キャッシュ。同じテンプレを毎フレームdecode/cvtColorしないよう一度だけ用意
+const _tmpl_rgb_cache = {};
+function get_tmpl_rgb(id) {
+  if (!_tmpl_rgb_cache[id]) {
+    let m = cv.imread(document.getElementById(id));
+    cv.cvtColor(m, m, cv.COLOR_RGBA2RGB, 0);
+    _tmpl_rgb_cache[id] = m;
+  }
+  return _tmpl_rgb_cache[id];
+}
+// 色変換なしのraw imreadキャッシュ
+const _tmpl_raw_cache = {};
+function get_tmpl_raw(id) {
+  if (!_tmpl_raw_cache[id]) {
+    _tmpl_raw_cache[id] = cv.imread(document.getElementById(id));
+  }
+  return _tmpl_raw_cache[id];
 }
 function smoothing_list(l, window_size) {
   let out = [];
@@ -387,7 +442,7 @@ function trim_by_platform(l_mat) {
       // 解像度一致確認
       if (!(Math.min(...l_mat.map((d) => {return d.cols})) == Math.max(...l_mat.map((d) => {return d.cols})) &&
           Math.min(...l_mat.map((d) => {return d.rows})) == Math.max(...l_mat.map((d) => {return d.rows})))) {
-        throw new Error('取り込み画像の解像度が一致していません。');
+        throw new Error('The loaded images have different resolutions.');
       }
       // 縦長ならトリミングなし
       if (l_mat[0].cols < l_mat[0].rows) {
@@ -408,12 +463,10 @@ function trim_by_platform(l_mat) {
         let dtype = -1;
         l_mat.slice(1).forEach((mat, n) => {
           // 2枚目以降を1枚目と比較し差分範囲を取得、全画像の差異を合計
-          tmp_diff = new cv.Mat();
-          img_i_gray = mat.clone();
-          cv.cvtColor(img_i_gray, img_i_gray, cv.COLOR_RGBA2GRAY, 0);
+          cv.cvtColor(mat, img_i_gray, cv.COLOR_RGBA2GRAY, 0);
           cv.absdiff(img_0_gray, img_i_gray, tmp_diff);
           if (n == 0) {
-            img_diff_sum = tmp_diff.clone();
+            tmp_diff.copyTo(img_diff_sum);
           } else {
             cv.add(tmp_diff, img_diff_sum, img_diff_sum, mask, dtype);
           }
@@ -421,18 +474,9 @@ function trim_by_platform(l_mat) {
         // 2値化
         cv.adaptiveThreshold(img_diff_sum, img_diff_sum, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 3, 2);
         cv.bitwise_not(img_diff_sum, img_diff_sum);
-        // 一列毎に差異を合計
-        let l_sum_diff_by_x = [];
-        for (let i = 0; i < img_diff_sum.cols; i++) {
-          tmp_sum = 0;
-          // 画像全体を検証
-          for (let j = 0; j < img_diff_sum.rows; j++) {
-            // ucharAtは1px毎に0~255で出力
-            tmp_sum += img_diff_sum.ucharAt(j, i);
-          }
-          // heightで割って標準化
-          l_sum_diff_by_x.push(tmp_sum / img_diff_sum.rows);
-        }
+        // 一列毎に差異を合計してheightで標準化
+        const _h = img_diff_sum.rows;
+        let l_sum_diff_by_x = col_sums_uchar(img_diff_sum).map(s => s / _h);
         // 結果の平滑化
         let l_sum_diff_by_x_smooth = smoothing_list(l_sum_diff_by_x, diff_window_size);
         // console.log(l_sum_diff_by_x.join('\n'));
@@ -443,7 +487,7 @@ function trim_by_platform(l_mat) {
         console.log(tmp_area_x);
         if (tmp_area_x.v1 == -1) {
           // スクロール範囲が特定出来なかったらエラー終了
-          throw new Error('スクロール範囲が特定出来ませんでした。同一画像を指定している可能性があります。');
+          throw new Error('Could not determine the scroll area. You may have selected the same image twice.');
         }
         // 取得した範囲の左右にバッファを持たせる
         tmp_x1 = Math.max(0, Math.floor(tmp_area_x.v1 - (tmp_area_x.v2 - tmp_area_x.v1) * trim_width_buffer));
@@ -506,7 +550,7 @@ function detect_rects(img_in) {
 
   // console.log(mv_contours.size(), mv_contours_only_large.size());
   if (mv_contours_only_large.size() == 0) {
-    throw new Error('閉じるボタンが検出出来ない画像があります。');
+    throw new Error('Could not detect the close button in one of the images.');
   };
 
   // 閉じるボタンテンプレ読み込み
@@ -587,23 +631,20 @@ function detect_rects(img_in) {
       let img_find_header = img_in.roi(new cv.Rect(rect_whole.whole.x, y_start, rect_whole.whole.width, Math.floor(rect_whole.whole.height / 10))).clone();
       cv.cvtColor(img_find_header, img_find_header, cv.COLOR_RGB2HSV, 0);
       let green = new cv.Mat();
+      let green_lo = new cv.Mat(img_find_header.rows, img_find_header.cols, img_find_header.type(), [20, 150, 0, 0]);
+      let green_hi = new cv.Mat(img_find_header.rows, img_find_header.cols, img_find_header.type(), [60, 255, 255, 0]);
       // ヘッダー辺りで緑っぽいピクセルを抽出
-      cv.inRange(
-        img_find_header,
-        new cv.Mat(img_find_header.rows, img_find_header.cols, img_find_header.type(), [20, 150, 0, 0]),
-        new cv.Mat(img_find_header.rows, img_find_header.cols, img_find_header.type(), [60, 255, 255, 0]),
-        green);
+      cv.inRange(img_find_header, green_lo, green_hi, green);
+      green_lo.delete();
+      green_hi.delete();
 
       // 上から見ていってほぼ全セルが緑っぽい行(＝ウマ娘詳細ヘッダーの始まり)をy_actに格納
       let y_act = rect_whole.whole.y;
-      let tmp_sum = 0;
+      const green_row_sums = row_sums_uchar(green);
+      const green_thres_sum = thres_header * green.cols * 255;
       for (let i = 0; i < green.rows; i++) {
-        tmp_sum = 0;
-        for (let j = 0; j < green.cols; j++) {
-          tmp_sum += green.ucharAt(i, j);
-        }
-        if ((tmp_sum / 255) / green.cols > thres_header) {
-          y_act = y_start + i
+        if (green_row_sums[i] > green_thres_sum) {
+          y_act = y_start + i;
           break;
         }
       }
@@ -624,67 +665,25 @@ function detect_rects(img_in) {
       // レイアウトを取得
       let arr_rayout_score = [];
 
-      let img_tgt = new cv.Mat();
-      let img_tmpl = new cv.Mat();
-      let tmp_dst = new cv.Mat();
+      // 1パターン分のスコアを算出してリーク無しで開放するヘルパー
+      const score_layout = (rayout_name, rect, tmpl_id) => {
+        let img_tgt = img_in.roi(new cv.Rect(Math.max(rect.x - 2, 0), Math.max(rect.y - 2, 0), rect.width + 4, rect.height + 4));
+        const img_tmpl_cached = get_tmpl_rgb(tmpl_id);
+        let tmp_dst = new cv.Mat();
+        cv.resize(img_tmpl_cached, tmp_dst, new cv.Size(rect.width, rect.height), 0, 0);
+        const score = match_tmpl_min_max_loc(img_tgt, tmp_dst).maxVal;
+        img_tgt.delete();
+        tmp_dst.delete();
+        return {'rayout_type': rayout_name, 'score': score};
+      };
 
-      // 着順表かチェック
-      // レイアウト毎にスコアを算出
-      img_tgt = img_in.roi(new cv.Rect(Math.max(rects_base.header_text_result_table.x - 2, 0), Math.max(rects_base.header_text_result_table.y - 2, 0), rects_base.header_text_result_table.width + 4, rects_base.header_text_result_table.height + 4));
-      img_tmpl = cv.imread(document.getElementById('tmplHeaderTextResultTable'));
-      cv.cvtColor(img_tmpl, img_tmpl, cv.COLOR_RGBA2RGB, 0);
-      tmp_dst = new cv.Mat();
-      cv.resize(img_tmpl, tmp_dst, new cv.Size(rects_base.header_text_result_table.width, rects_base.header_text_result_table.height), 0, 0);
-      arr_rayout_score.push({'rayout_type': 'result_table', 'score': match_tmpl_min_max_loc(img_tgt, tmp_dst).maxVal});
-
-      // チムレスコア情報かチェック
-      img_tgt = img_in.roi(new cv.Rect(Math.max(rects_base.header_text_score_info.x - 2, 0), Math.max(rects_base.header_text_score_info.y - 2, 0), rects_base.header_text_score_info.width + 4, rects_base.header_text_score_info.height + 4));
-      img_tmpl = cv.imread(document.getElementById('tmplHeaderTextScoreInfo'));
-      cv.cvtColor(img_tmpl, img_tmpl, cv.COLOR_RGBA2RGB, 0);
-      tmp_dst = new cv.Mat();
-      cv.resize(img_tmpl, tmp_dst, new cv.Size(rects_base.header_text_score_info.width, rects_base.header_text_score_info.height), 0, 0);
-      arr_rayout_score.push({'rayout_type': 'score_info', 'score': match_tmpl_min_max_loc(img_tgt, tmp_dst).maxVal});
-
-      // ウマ娘詳細かチェック
-      // チムレスコア情報とターゲット画像の座標が同じなのでimg_tgtの生成は省略
-      img_tmpl = cv.imread(document.getElementById('tmplHeaderTextUmaDetail'));
-      cv.cvtColor(img_tmpl, img_tmpl, cv.COLOR_RGBA2RGB, 0);
-      tmp_dst = new cv.Mat();
-      cv.resize(img_tmpl, tmp_dst, new cv.Size(rects_base.header_text_score_detail.width, rects_base.header_text_score_detail.height), 0, 0);
-      arr_rayout_score.push({'rayout_type': 'uma_detail', 'score': match_tmpl_min_max_loc(img_tgt, tmp_dst).maxVal});
-
-      // チムレスコア詳細かチェック
-      // スコア情報とターゲット画像の座標が同じなのでimg_tgtの生成は省略
-      img_tmpl = cv.imread(document.getElementById('tmplHeaderTextScoreDetail'));
-      cv.cvtColor(img_tmpl, img_tmpl, cv.COLOR_RGBA2RGB, 0);
-      tmp_dst = new cv.Mat();
-      cv.resize(img_tmpl, tmp_dst, new cv.Size(rects_base.header_text_score_detail.width, rects_base.header_text_score_detail.height), 0, 0);
-      arr_rayout_score.push({'rayout_type': 'score_detail', 'score': match_tmpl_min_max_loc(img_tgt, tmp_dst).maxVal});
-
-      // 出走ウマ娘かチェック
-      // スコア情報とターゲット画像の座標が同じなのでimg_tgtの生成は省略
-      img_tmpl = cv.imread(document.getElementById('tmplHeaderTextField'));
-      cv.cvtColor(img_tmpl, img_tmpl, cv.COLOR_RGBA2RGB, 0);
-      tmp_dst = new cv.Mat();
-      cv.resize(img_tmpl, tmp_dst, new cv.Size(rects_base.header_text_field.width, rects_base.header_text_field.height), 0, 0);
-      arr_rayout_score.push({'rayout_type': 'field', 'score': match_tmpl_min_max_loc(img_tgt, tmp_dst).maxVal});
-
-      // レース詳細かチェック
-      // スコア情報とターゲット画像の座標が同じなのでimg_tgtの生成は省略
-      img_tmpl = cv.imread(document.getElementById('tmplHeaderTextRaceDetail'));
-      cv.cvtColor(img_tmpl, img_tmpl, cv.COLOR_RGBA2RGB, 0);
-      tmp_dst = new cv.Mat();
-      cv.resize(img_tmpl, tmp_dst, new cv.Size(rects_base.header_text_race_detail.width, rects_base.header_text_race_detail.height), 0, 0);
-      arr_rayout_score.push({'rayout_type': 'race_detail', 'score': match_tmpl_min_max_loc(img_tgt, tmp_dst).maxVal});
-
-      // 号外かチェック
-      // スコア情報とターゲット画像の座標が同じなのでimg_tgtの生成は省略
-      img_tgt = img_in.roi(new cv.Rect(Math.max(rects_base.header_text_gougai.x - 2, 0), Math.max(rects_base.header_text_gougai.y - 2, 0), rects_base.header_text_gougai.width + 4, rects_base.header_text_gougai.height + 4));
-      img_tmpl = cv.imread(document.getElementById('tmplHeaderTextGougai'));
-      cv.cvtColor(img_tmpl, img_tmpl, cv.COLOR_RGBA2RGB, 0);
-      tmp_dst = new cv.Mat();
-      cv.resize(img_tmpl, tmp_dst, new cv.Size(rects_base.header_text_gougai.width, rects_base.header_text_gougai.height), 0, 0);
-      arr_rayout_score.push({'rayout_type': 'gougai', 'score': match_tmpl_min_max_loc(img_tgt, tmp_dst).maxVal});
+      arr_rayout_score.push(score_layout('result_table',  rects_base.header_text_result_table,  'tmplHeaderTextResultTable'));
+      arr_rayout_score.push(score_layout('score_info',    rects_base.header_text_score_info,    'tmplHeaderTextScoreInfo'));
+      arr_rayout_score.push(score_layout('uma_detail',    rects_base.header_text_score_detail,  'tmplHeaderTextUmaDetail'));
+      arr_rayout_score.push(score_layout('score_detail',  rects_base.header_text_score_detail,  'tmplHeaderTextScoreDetail'));
+      arr_rayout_score.push(score_layout('field',         rects_base.header_text_field,         'tmplHeaderTextField'));
+      arr_rayout_score.push(score_layout('race_detail',   rects_base.header_text_race_detail,   'tmplHeaderTextRaceDetail'));
+      arr_rayout_score.push(score_layout('gougai',        rects_base.header_text_gougai,        'tmplHeaderTextGougai'));
 
       // 最もスコアの高いレイアウトを選択、しきい値より高ければ採用
       arr_rayout_score.sort((a, b) => b.score - a.score);
@@ -699,30 +698,9 @@ function detect_rects(img_in) {
       if (rayout_type == 'uma_detail') {
         // ウマ娘詳細画面の中でレイアウト特定
         arr_rayout_score = [];
-
-        // 成長率付きかチェック
-        let img_tgt = img_in.roi(new cv.Rect(rects_base.growth_rate.x - 2, rects_base.growth_rate.y - 2, rects_base.growth_rate.width + 4, rects_base.growth_rate.height + 4));
-        let img_tmpl = cv.imread(document.getElementById('tmplGrowthRate'));
-        cv.cvtColor(img_tmpl, img_tmpl, cv.COLOR_RGBA2RGB, 0);
-        let tmp_dst = new cv.Mat();
-        cv.resize(img_tmpl, tmp_dst, new cv.Size(rects_base.growth_rate.width, rects_base.growth_rate.height), 0, 0);
-        arr_rayout_score.push({'rayout_type': 'with_growth_rate', 'score': match_tmpl_min_max_loc(img_tgt, tmp_dst).maxVal});
-
-        // パートナー登録ボタン付きかチェック
-        img_tgt = img_in.roi(new cv.Rect(rects_base.register_partner.x - 2, rects_base.register_partner.y - 2, rects_base.register_partner.width + 4, rects_base.register_partner.height + 4));
-        img_tmpl = cv.imread(document.getElementById('tmplRegisterPartner'));
-        cv.cvtColor(img_tmpl, img_tmpl, cv.COLOR_RGBA2RGB, 0);
-        tmp_dst = new cv.Mat();
-        cv.resize(img_tmpl, tmp_dst, new cv.Size(rects_base.register_partner.width, rects_base.register_partner.height), 0, 0);
-        arr_rayout_score.push({'rayout_type': 'with_register_partner', 'score': match_tmpl_min_max_loc(img_tgt, tmp_dst).maxVal});
-
-        // パートナー解除ボタン付きかチェック
-        // パートナー登録とターゲット画像の座標が同じなのでimg_tgtの生成は省略
-        img_tmpl = cv.imread(document.getElementById('tmplUnregisterPartner'));
-        cv.cvtColor(img_tmpl, img_tmpl, cv.COLOR_RGBA2RGB, 0);
-        tmp_dst = new cv.Mat();
-        cv.resize(img_tmpl, tmp_dst, new cv.Size(rects_base.register_partner.width, rects_base.register_partner.height), 0, 0);
-        arr_rayout_score.push({'rayout_type': 'with_unregister_partner', 'score': match_tmpl_min_max_loc(img_tgt, tmp_dst).maxVal});
+        arr_rayout_score.push(score_layout('with_growth_rate',       rects_base.growth_rate,      'tmplGrowthRate'));
+        arr_rayout_score.push(score_layout('with_register_partner',  rects_base.register_partner, 'tmplRegisterPartner'));
+        arr_rayout_score.push(score_layout('with_unregister_partner', rects_base.register_partner, 'tmplUnregisterPartner'));
 
         // 最もスコアの高いレイアウトを選択、しきい値より高ければ採用
         arr_rayout_score.sort((a, b) => b.score - a.score);
@@ -736,9 +714,6 @@ function detect_rects(img_in) {
           rayout_type = 'normal';
         }
       }
-      img_tgt.delete();
-      img_tmpl.delete();
-      tmp_dst.delete();
       img_find_header.delete();
       green.delete();
 
@@ -753,7 +728,7 @@ function detect_rects(img_in) {
           0 <= rects.whole.y &&
           rects.whole.x + rects.whole.width <= img_in.cols &&
           rects.whole.y + rects.whole.height <= img_in.rows)) {
-        throw new Error('ウマ娘詳細エリアが正しく検出出来ない画像があります。');
+        throw new Error('Could not correctly detect the Uma Musume detail area in one of the images.');
         }
         // 輪郭描画
         // let dst = cv.Mat.zeros(img_gray.rows, img_gray.cols, cv.CV_8UC3);
@@ -774,6 +749,8 @@ function detect_rects(img_in) {
   }
 
   // メモリ解放
+  // cont_out / l_tmpl_contours_only_large は MatVector が所有しているMatの参照なので、
+  // MatVector.delete() に任せて二重解放を避ける
   img_gray.delete();
   img_gray_half.delete();
   mv_contours.delete();
@@ -782,8 +759,6 @@ function detect_rects(img_in) {
   tmpl_gray.delete();
   mv_tmpl_contours.delete();
   tmpl_hierarchy.delete();
-  cont_out.forEach(function(c){c.delete()});
-  l_tmpl_contours_only_large.forEach(function(c){c.delete()});
   // console.log({'rayout_type': rayout_type, 'rects': rects});
   return {'rayout_type': rayout_type, 'rects': rects};
 }
@@ -832,27 +807,17 @@ function get_unknown_rects(l_mat, l_rects) {
       let tmp_sum = 0;
       l_index_tgt.slice(1).forEach(function(i){
         // 2枚目以降を1枚目と比較し差分範囲を取得
-        tmp_diff = new cv.Mat();
-        img_i_gray = l_mat[i].clone();
-        cv.cvtColor(img_i_gray, img_i_gray, cv.COLOR_RGBA2GRAY, 0);
+        cv.cvtColor(l_mat[i], img_i_gray, cv.COLOR_RGBA2GRAY, 0);
         cv.absdiff(img_0_gray, img_i_gray, tmp_diff);
 
         // trim_by_platform()でx軸方向はトリミング済だからここではトリミングしない
         tmp_x1 = 0;
         tmp_x2 = tmp_diff.cols;
 
-        // 一行毎に差異を合計
-        let l_sum_diff_by_y = [];
-        for (let i = 0; i < tmp_diff.rows; i++) {
-          tmp_sum = 0;
-          // 前段で特定した幅で検証
-          for (let j = tmp_x1; j < tmp_x2; j++) {
-            // ucharAtは1px毎に0~255で出力
-            tmp_sum += tmp_diff.ucharAt(i, j);
-          }
-          // widthで割って標準化
-          l_sum_diff_by_y.push(tmp_sum / (tmp_x2 - tmp_x1));
-        }
+        // 一行毎に差異を合計してwidthで標準化
+        // tmp_x1=0, tmp_x2=cols なので row_sums で全幅集計
+        const _w_band = tmp_x2 - tmp_x1;
+        let l_sum_diff_by_y = row_sums_uchar(tmp_diff).map(s => s / _w_band);
         // 結果の平滑化
         let l_sum_diff_by_y_smooth = smoothing_list(l_sum_diff_by_y, diff_window_size);
         // console.log(l_sum_diff_by_y.join('\n'));
@@ -947,31 +912,22 @@ function trim_parts(l_mat, l_rects) {
       let obj_tmp = {};
       let tgt_load_parts = load_parts_by_rayout_type[l_rects[i].rayout_type];
       tgt_load_parts.forEach(function(p){
-        let tmp_mat = new cv.Mat();
-        let tmp_dst = new cv.Mat();
         // console.log(Object.keys(l_rects[i].rects));
-        tmp_mat = m.roi(l_rects[i].rects[p]).clone();
+        let tmp_mat = m.roi(l_rects[i].rects[p]).clone();
+        let tmp_dst = new cv.Mat();
         cv.resize(tmp_mat, tmp_dst, tgt_sizes[l_rects[i].rayout_type][p]);
-        obj_tmp[p] = tmp_dst.clone();
+        obj_tmp[p] = tmp_dst;
         tmp_mat.delete();
-        tmp_dst.delete();
       });
       obj_tmp['rayout_type'] = l_rects[i].rayout_type;
       // スクロールバーがあればそれの高さを取得
       if (tgt_load_parts.includes('scroll_bar')) {
         // console.log(l_rects[i].rects['scroll_bar']);
-        img_scroll_bar_gray = obj_tmp['scroll_bar'].clone();
+        let img_scroll_bar_gray = obj_tmp['scroll_bar'].clone();
         cv.cvtColor(img_scroll_bar_gray, img_scroll_bar_gray, cv.COLOR_RGBA2GRAY, 0);
 
-        let l_sum_val_by_y = [];
-        for (let i = 0; i < img_scroll_bar_gray.rows; i++) {
-          tmp_sum = 0;
-          for (let j = 0; j < img_scroll_bar_gray.cols; j++) {
-            // ucharAtは1px毎に0~255で出力
-            tmp_sum += img_scroll_bar_gray.ucharAt(i, j);
-          }
-          l_sum_val_by_y.push(tmp_sum / img_scroll_bar_gray.cols);
-        }
+        const _sb_w = img_scroll_bar_gray.cols;
+        let l_sum_val_by_y = row_sums_uchar(img_scroll_bar_gray).map(s => s / _sb_w);
         img_scroll_bar_gray.delete();
         // スクロールバーの中央と長さを取得して格納
         detect_scroll_bar_position(obj_tmp, l_sum_val_by_y);
@@ -984,14 +940,9 @@ function trim_parts(l_mat, l_rects) {
 function get_group_list(imgs, l_rects) {
   return new Promise(function(resolve){
     const n_tgt = imgs.length;
-    // グループ決め
-    let l_group = [];
-    if (force_one_group) {
-      // 強制的に全画像同じグループ扱い
-      l_group = Array(n_tgt).fill(0);
-    } else {
-      // グループ番号をnullで初期化
-      l_group = Array(n_tgt).fill(null);
+    // グループ番号をnullで初期化
+    let l_group = Array(n_tgt).fill(null);
+    {
       // 各画像の組み合わせ毎の一致度を格納する二次元配列宣言
       // 似てると1、似てないと0なので1.0で初期化
       let arr_val = new Array(n_tgt);
@@ -1000,6 +951,25 @@ function get_group_list(imgs, l_rects) {
       }
       // アイコン等からグループ決め
       // 全組み合わせでテンプレートマッチ
+      // matchTemplate は target に対して template が小さい必要があるので、各imgの各パーツを「1px shaved」した
+      // テンプレ用ROIを画像毎に1度だけ作って使い回す（旧コードはペア毎にcloneしていた）
+      const _shaved_tmpl_cache = imgs.map(() => ({}));
+      const get_shaved_tmpl = (img_idx, part) => {
+        if (!_shaved_tmpl_cache[img_idx][part]) {
+          const m = imgs[img_idx][part];
+          // roi はビューを返すので img の生存中は有効。clone は不要
+          _shaved_tmpl_cache[img_idx][part] = m.roi(new cv.Rect(0, 0, Math.max(m.cols - 1, 1), Math.max(m.rows - 1, 1)));
+        }
+        return _shaved_tmpl_cache[img_idx][part];
+      };
+      const score_pair = (i, j, parts) => {
+        let v = 1.0;
+        parts.forEach((p) => {
+          v *= match_tmpl_min_max_loc(imgs[j][p], get_shaved_tmpl(i, p)).maxVal;
+        });
+        arr_val[Math.min(i, j)][Math.max(i, j)] = v;
+      };
+
       imgs.forEach(function(img_tmpl, i){
         imgs.forEach(function(img_tgt, j){
           // 同じ組み合わせで二回チェックしないようjの方が大きい時
@@ -1011,32 +981,24 @@ function get_group_list(imgs, l_rects) {
               arr_val[Math.min(i, j)][Math.max(i, j)] = 0;
             } else if (['score_info', 'field', 'common_header_scroll'].includes(l_rects[i].rayout_type)) {
               // ヘッダーを持つレイアウトはヘッダーで比較
-              ['header'].forEach(function(p){
-                let res = match_tmpl_min_max_loc(img_tgt[p], img_tmpl[p].roi(new cv.Rect(0, 0, Math.max(img_tmpl[p].cols - 1, 1), Math.max(img_tmpl[p].rows - 1, 1))).clone());
-                // パーツ毎の結果を乗算、全部似てればほぼ1のまま、どれかでも違うと一気に0に近づく
-                arr_val[Math.min(i, j)][Math.max(i, j)] *= res.maxVal;
-              });
+              score_pair(i, j, ['header']);
             } else if (['result_table', 'score_detail', 'race_detail', 'gougai'].includes(l_rects[i].rayout_type)) {
               // 基本情報欄を持つレイアウトは基本情報欄で比較
-              ['basic_info'].forEach(function(p){
-                let res = match_tmpl_min_max_loc(img_tgt[p], img_tmpl[p].roi(new cv.Rect(0, 0, Math.max(img_tmpl[p].cols - 1, 1), Math.max(img_tmpl[p].rows - 1, 1))).clone());
-                // パーツ毎の結果を乗算、全部似てればほぼ1のまま、どれかでも違うと一気に0に近づく
-                arr_val[Math.min(i, j)][Math.max(i, j)] *= res.maxVal;
-              });
+              score_pair(i, j, ['basic_info']);
             } else if (['common_scroll_only'].includes(l_rects[i].rayout_type)) {
               // スクロール範囲しかないものはレイアウトタイプが一致していれば強制的に100%同じグループとして1を強制代入
               arr_val[Math.min(i, j)][Math.max(i, j)] = 1;
             } else {
               // パーツ毎にテンプレートマッチ
-              tgt_parts_for_group.forEach(function(p){
-                let res = match_tmpl_min_max_loc(img_tgt[p], img_tmpl[p].roi(new cv.Rect(0, 0, Math.max(img_tmpl[p].cols - 1, 1), Math.max(img_tmpl[p].rows - 1, 1))).clone());
-                // パーツ毎の結果を乗算、全部似てればほぼ1のまま、どれかでも違うと一気に0に近づく
-                arr_val[Math.min(i, j)][Math.max(i, j)] *= res.maxVal;
-              });
+              score_pair(i, j, tgt_parts_for_group);
             }
           }
         })
-      })
+      });
+      // shaved roi はビューなので、生Mat側を解放する前にここでクリーンアップ
+      _shaved_tmpl_cache.forEach((per_img) => {
+        Object.values(per_img).forEach((m) => m.delete());
+      });
       console.log(arr_val);
       let current_group = -1;
       [...Array(n_tgt).keys()].forEach(function(i){
@@ -1105,6 +1067,7 @@ function match_one_line(imgs, l_group, arr_val, arr_loc, i) {
   return new Promise(function(resolve){
     let img_tmpl = imgs[i];
     let simple_rayout = ['result_table', 'score_info', 'score_detail', 'field', 'race_detail', 'gougai'];
+    let did_scbar_fallback = false;
     imgs.forEach(function(img_tgt, j){
       let is_neighbor_by_scbar = false;
       let is_tgt = false;
@@ -1133,7 +1096,11 @@ function match_one_line(imgs, l_group, arr_val, arr_loc, i) {
           res = match_tmpl_min_max_loc(img_tgt.scroll, img_tmpl.bottom_row);
         }
         // 1行分の範囲でヒットしたら重なってるはずのエリアで改めてヒットするか確認
-        if (arr_val[Math.min(i, j)][Math.max(i, j)] < res.maxVal && thres_match_tmpl < res.maxVal) {
+        // 汎用レイアウト（PC/Steam英語版など）はテンプレ未対応で全体的にスコアが低めに出るため、
+        // しきい値を緩めて拾う。後段の thres_match_tmpl_higher で再検証されるので誤検出リスクは限定的。
+        const is_common = ['common_header_scroll', 'common_scroll_only'].includes(img_tmpl.rayout_type);
+        const cur_thres = is_common ? thres_match_tmpl_common : thres_match_tmpl;
+        if (arr_val[Math.min(i, j)][Math.max(i, j)] < res.maxVal && cur_thres < res.maxVal) {
           // console.log(i, j);
           let dist = 0;
           if (simple_rayout.includes(img_tmpl.rayout_type)) {
@@ -1156,7 +1123,15 @@ function match_one_line(imgs, l_group, arr_val, arr_loc, i) {
 
           let tmp_res = match_tmpl_min_max_loc(tmp_img_tgt, tmp_img_tmpl);
           // console.log(i, j, res.maxVal, tmp_res.maxVal, dist);
-          if (thres_match_tmpl_higher < tmp_res.maxVal) {
+          // 汎用レイアウト時、重なり領域がスクロール部分の thres_min_overlap_ratio より小さければ捨てる
+          // （サブセクション・ヘッダ帯だけで形状一致するfalse positiveを除外）
+          const overlap_h = img_tmpl.scroll.rows - Math.abs(dist);
+          const min_overlap_h = Math.floor(img_tmpl.scroll.rows * thres_min_overlap_ratio);
+          const skip_for_small_overlap = is_common && overlap_h < min_overlap_h;
+          // 汎用レイアウトは均一行レイアウトでcross-correlationが高めに出てしまうため、
+          // 本物の重なり（0.9+）のみ採用する
+          const cur_higher = is_common ? thres_match_tmpl_common_higher : thres_match_tmpl_higher;
+          if (cur_higher < tmp_res.maxVal && !skip_for_small_overlap) {
             arr_val[Math.min(i, j)][Math.max(i, j)] = res.maxVal;
             arr_loc[Math.min(i, j)][Math.max(i, j)] = dist;
           }
@@ -1171,42 +1146,17 @@ function match_one_line(imgs, l_group, arr_val, arr_loc, i) {
           tmp_sign = -1;
         }
         if (is_neighbor_by_scbar && (arr_val[Math.min(i, j)][Math.max(i, j)] == 0.0 || arr_loc[Math.min(i, j)][Math.max(i, j)] * tmp_sign < 0)) {
-          raiseNormalMsg('スクロールバーの位置に基づいて単純連結している箇所があります。');
+          did_scbar_fallback = true;
           arr_val[Math.min(i, j)][Math.max(i, j)] = 1.0;
           arr_loc[Math.min(i, j)][Math.max(i, j)] = img_tgt.scroll.rows * tmp_sign;
           // console.log(is_neighbor_by_scbar, i, j, arr_val[Math.min(i, j)][Math.max(i, j)], arr_loc[Math.min(i, j)][Math.max(i, j)])
         }
       }
     })
-    resolve();
+    resolve(did_scbar_fallback);
   })
 }
 
-// 2024/1/10 未使用
-async function match_cross(imgs, l_group) {
-    console.log('グループ内でテンプレートマッチ')
-    const n_tgt = imgs.length;
-    // グループ内でテンプレートマッチ
-    // 結果格納用配列初期化
-    let arr_val = new Array(n_tgt);
-    for(let y = 0; y < n_tgt; y++) {
-      arr_val[y] = new Array(n_tgt).fill(0.0);
-    }
-    let arr_loc = new Array(n_tgt);
-    for(let y = 0; y < n_tgt; y++) {
-      arr_loc[y] = new Array(n_tgt).fill(0.0);
-    }
-    for (let i = 0; i < imgs.length; i++) {
-      // changePercentage(10 + i);
-      console.log((i + 1) +  '/' + imgs.length);
-      await match_one_line(imgs, l_group, arr_val, arr_loc, i);
-      changePercentage(30 + i);
-      await repaint();
-    }
-    // arr_val.forEach(function(r){console.log(r)});
-    // arr_loc.forEach(function(r){console.log(r)});
-    return [arr_val, arr_loc];
-}
 function get_relative_dist(arr_val, arr_loc, l_group) {
   return new Promise(function(resolve){
     const n_tgt = arr_val.length;
@@ -1293,20 +1243,73 @@ function align_missing_imgs(l_relative_height, l_group, imgs) {
   return new Promise(function(resolve){
     // console.log(l_relative_height);
     const n_tgt = imgs.length;
-    console.log('位置が取得出来なかった画像を末尾に単純配置');
+    console.log('位置が取得出来なかった画像を取り込み順に基づいて配置');
     if (l_relative_height.filter((d) => d == null).length) {
-      raiseNormalMsg('位置が取得出来ない画像があったため末尾に単純連結しています。二行ずつ重なるようにスクショを撮れているか確認して下さい。');
+      raiseNormalMsg('Some images could not be aligned by content. They were placed in the order you loaded them.');
       // グループ毎に処理
       [...Array(Math.max(...l_group) + 1).keys()].forEach(function(current_group){
-        let max_rh_already = Math.max(...l_relative_height.filter((d, i) => l_group[i] == current_group));
-        let index_max_rh_already = [...Array(n_tgt).keys()].filter((d) => l_group[d] == current_group && l_relative_height[d] == max_rh_already)[0];
-        console.log(max_rh_already, index_max_rh_already);
-        let next_rh = max_rh_already + imgs[index_max_rh_already].scroll.rows;
-        [...Array(n_tgt).keys()].filter((d) => l_group[d] == current_group && l_relative_height[d] == null).forEach(function(i){
-          l_relative_height[i] = next_rh;
-          next_rh += imgs[i].scroll.rows;
-        })
-      })
+        // 当グループのインデックスを取得
+        const idx_in_group = [...Array(n_tgt).keys()].filter((d) => l_group[d] == current_group);
+        // マッチで位置が決まっている画像のインデックス
+        const idx_matched = idx_in_group.filter((i) => l_relative_height[i] != null);
+        // 未マッチのインデックス（取り込み順を保つ）
+        const idx_unmatched = idx_in_group.filter((i) => l_relative_height[i] == null);
+        if (idx_unmatched.length === 0) return;
+
+        if (idx_matched.length === 0) {
+          // 全部未マッチなら単純に取り込み順に縦積み
+          let next_rh = 0;
+          idx_unmatched.forEach(function(i){
+            l_relative_height[i] = next_rh;
+            next_rh += imgs[i].scroll.rows;
+          });
+          return;
+        }
+
+        // マッチ済画像の取り込み順での最小・最大インデックス
+        const min_matched = Math.min(...idx_matched);
+        const max_matched = Math.max(...idx_matched);
+        const min_rh = Math.min(...idx_matched.map((i) => l_relative_height[i]));
+        const max_rh = Math.max(...idx_matched.map((i) => l_relative_height[i]));
+        const idx_max_rh = idx_matched.find((i) => l_relative_height[i] === max_rh);
+
+        // 取り込み順で最初のマッチ画像より前にあるものは「上に」積む（取り込み順を保ったまま）
+        const before = idx_unmatched.filter((i) => i < min_matched).sort((a, b) => a - b);
+        // 取り込み順で最後のマッチ画像より後にあるものは「下に」積む
+        const after = idx_unmatched.filter((i) => i > max_matched).sort((a, b) => a - b);
+        // 中間のものは末尾に追加（位置情報がないため）
+        const middle = idx_unmatched.filter((i) => i > min_matched && i < max_matched).sort((a, b) => a - b);
+
+        // 「上に」積む: 取り込み順を保つため、min_matched から逆順に下から上へ配置
+        let cur_rh = min_rh;
+        for (let k = before.length - 1; k >= 0; k--) {
+          const i = before[k];
+          cur_rh -= imgs[i].scroll.rows;
+          l_relative_height[i] = cur_rh;
+        }
+        // 「下に」積む
+        cur_rh = max_rh + imgs[idx_max_rh].scroll.rows;
+        for (let k = 0; k < after.length; k++) {
+          const i = after[k];
+          l_relative_height[i] = cur_rh;
+          cur_rh += imgs[i].scroll.rows;
+        }
+        // 「中間」のもの: 末尾にまとめて追加
+        for (let k = 0; k < middle.length; k++) {
+          const i = middle[k];
+          l_relative_height[i] = cur_rh;
+          cur_rh += imgs[i].scroll.rows;
+        }
+      });
+      // 最も上の画像を 0 にするため、最小値で正規化
+      [...Array(Math.max(...l_group) + 1).keys()].forEach(function(current_group){
+        const min_rh = Math.min(...l_relative_height.filter((d, i) => l_group[i] == current_group));
+        for (let i = 0; i < l_relative_height.length; i++) {
+          if (l_group[i] == current_group && l_relative_height[i] != null) {
+            l_relative_height[i] -= min_rh;
+          }
+        }
+      });
     }
     // console.log(l_relative_height);
     resolve(l_relative_height);
@@ -1344,7 +1347,7 @@ function generateReceipt(imgs, l_group, l_relative_height) {
       });
       // はぐれがいたら末尾にトリミングなしで追加
       if ([...Array(n_tgt).keys()].filter((d) => l_group[d] == current_group && l_relative_height[d] == null).length > 0) {
-        raiseNormalMsg('重なり方を検出出来ない画像があったため一部取り込み順に単純連結している箇所があります。');
+        raiseNormalMsg('Some images had no detectable overlap and were concatenated in the order they were loaded.');
         [...Array(n_tgt).keys()].filter((d) => l_group[d] == current_group && l_relative_height[d] == null).forEach(function(i){
           imgs_part.push_back(imgs[i].scroll_full_width);
         });
@@ -1358,115 +1361,6 @@ function generateReceipt(imgs, l_group, l_relative_height) {
     // 上下左右連結は外側で
     resolve(imgs_tmp);
   })
-}
-// 2024/1/19 未使用
-function detectFactor(eles_scroll_canvas) {
-  let l_scroll_canvas = Array.from(eles_scroll_canvas);
-  const n_group = l_scroll_canvas.length;
-  console.log(n_group);
-  let l_out = [];
-  // グループ毎に処理
-  l_scroll_canvas.forEach((sc) => {
-    let l_tmp = [];
-    // 因子のまるポチとテキストの横方向の位置を取得
-    let tmp_scale = sc.width / rect_prop.scroll[2];
-    let l_rects = [
-      {
-        factor_disc: {
-          x: Math.floor((rect_prop.factor_disc_left[0] - rect_prop.scroll[0]) * tmp_scale),
-          y: 0,
-          w: Math.floor(rect_prop.factor_disc_left[2] * tmp_scale),
-          h: Math.floor(rect_prop.factor_disc_left[2] * tmp_scale)},
-        factor_icon: {
-          x: Math.floor((rect_prop.factor_icon_left[0] - rect_prop.scroll[0]) * tmp_scale),
-          y: 0,
-          w: Math.floor(rect_prop.factor_icon_left[2] * tmp_scale),
-          h: Math.floor(rect_prop.factor_icon_left[3] * tmp_scale)},
-        factor_text: {
-          x: Math.floor((rect_prop.factor_text_left[0] - rect_prop.scroll[0]) * tmp_scale),
-          y: 0,
-          w: Math.floor(rect_prop.factor_text_left[2] * tmp_scale),
-          h: Math.floor(rect_prop.factor_text_left[3] * tmp_scale)}
-      },
-      {
-        factor_disc: {
-          x: Math.floor((rect_prop.factor_disc_right[0] - rect_prop.scroll[0]) * tmp_scale),
-          w: Math.floor(rect_prop.factor_disc_right[2] * tmp_scale)},
-        factor_icon: {
-          x: Math.floor((rect_prop.factor_icon_right[0] - rect_prop.scroll[0]) * tmp_scale),
-          y: 0,
-          w: Math.floor(rect_prop.factor_icon_right[2] * tmp_scale),
-          h: Math.floor(rect_prop.factor_icon_right[3] * tmp_scale)},
-        factor_text: {
-          x: Math.floor((rect_prop.factor_text_right[0] - rect_prop.scroll[0]) * tmp_scale),
-          y: 0,
-          w: Math.floor(rect_prop.factor_text_right[2] * tmp_scale),
-          h: Math.floor(rect_prop.factor_text_right[3] * tmp_scale)}
-      }
-    ];
-    // Mat化
-    let tmpImg = cv.imread(sc);
-    // 1列目と2列目を順番に処理
-    [...Array(2).keys()].forEach(lr => {
-      let img_factor_discs = tmpImg.roi(new cv.Rect(
-        l_rects[lr].factor_disc.x,
-        0,
-        l_rects[lr].factor_disc.w,
-        tmpImg.rows)).clone();
-      // 因子のまるポチのテンプレート読み込み
-      let tmpl_factor_disc = cv.imread(document.getElementById('tmplFactorDisc'));
-      cv.resize(tmpl_factor_disc, tmpl_factor_disc, new cv.Size(l_rects[lr].factor_disc.w, l_rects[lr].factor_disc.w), 0, 0, cv.INTER_CUBIC);
-      // テンプレートマッチ
-      let result = new cv.Mat();
-      cv.matchTemplate(img_factor_discs, tmpl_factor_disc, result, cv.TM_CCOEFF_NORMED);
-      // list化
-      let l_res = [];
-      [...Array(result.size().height).keys()].forEach(y => {
-        l_res.push(result.floatPtr(y, 0)[0]);
-      })
-      // テンプレートマッチの結果からまるポチがあると思われる高さを抽出
-      let l_peak = [];
-      let thres_match_tmpl_disc_dynamic = Math.max(...l_res) * thres_match_tmpl_disc_rate;
-      console.log(thres_match_tmpl_disc_dynamic);
-      [...Array(l_res.length).keys()].forEach(y => {
-        if (0 < y && y < l_res.length - 1) {
-          if (l_res[y] > thres_match_tmpl_disc && l_res[y] > thres_match_tmpl_disc_dynamic && l_res[y - 1] < l_res[y] && l_res[y] > l_res[y + 1]) {
-            l_peak.push({index: y, val: l_res[y]});
-          }
-        }
-      })
-      // 位置が近すぎる結果があったらより精度の高い結果のみ残す
-      let l_peak_filtered = l_peak.filter((d) => Math.max(...l_peak.filter((e) => d.index - tmpl_factor_disc.rows <= e.index && e.index < d.index + tmpl_factor_disc.rows).map((e) => {return e.val})) == d.val);
-      console.log(l_peak_filtered);
-      // まるポチとテキストの座標算出
-      l_peak_filtered.forEach(p => {
-        l_tmp.push({
-          rect_factor_disc: {
-            left: l_rects[lr].factor_disc.x,
-            top: p.index,
-            width: l_rects[lr].factor_disc.w,
-            height: l_rects[lr].factor_disc.h
-          },
-          // アイコンの座標は盾の中心がまるポチと同じになるように
-          rect_factor_icon: {
-            left: l_rects[lr].factor_icon.x,
-            top: Math.floor(p.index + l_rects[lr].factor_disc.w / 2 - l_rects[lr].factor_icon.h / 2),
-            width: l_rects[lr].factor_icon.w,
-            height: l_rects[lr].factor_icon.h
-          },
-          rect_factor_text: {
-            left: l_rects[lr].factor_text.x,
-            top: p.index,
-            width: l_rects[lr].factor_text.w,
-            height: l_rects[lr].factor_text.h
-          }
-        })
-      })
-    })
-    l_out.push(l_tmp);
-    tmpImg.delete()
-  })
-  return l_out;
 }
 function gamma_correction(canvas_in, gamma_val) {
   let canvas_out = document.createElement('canvas');
@@ -1513,7 +1407,8 @@ function detectFactor_by_gamma(eles_scroll_canvas) {
   };
   // 大きい順に2番目のを因子1枠の輪郭として採用
   l_tmpl_contours_only_large.sort((first, second) => cv.contourArea(second) - cv.contourArea(first));
-  let msk_1factor = l_tmpl_contours_only_large[1];
+  // mv_tmpl_contours の所有なので、MatVector開放後も使えるようclone
+  let msk_1factor = l_tmpl_contours_only_large[1].clone();
   mv_tmpl_contours.delete();
   mv_tmpl_hierarchy.delete();
   src_tmpl.delete();
@@ -1537,7 +1432,7 @@ function detectFactor_by_gamma(eles_scroll_canvas) {
     for (let i = 0; i < mv_contours.size(); ++i) {
       // 小さい領域は無視
       if (cv.contourArea(mv_contours.get(i)) > (Math.min(img_src_gamma.cols, img_src_gamma.rows) ** 2) / 50) {
-        is_close_val = cv.matchShapes(mv_contours.get(i), msk_1factor, cv.CONTOURS_MATCH_I3, 0);
+        let is_close_val = cv.matchShapes(mv_contours.get(i), msk_1factor, cv.CONTOURS_MATCH_I3, 0);
         if (is_close_val < thres_cont_close) {
           let tmp_rect = cv.boundingRect(mv_contours.get(i));
           let tmp_scale = tmp_rect.width / rect_prop.factor_area_left[2];
@@ -1564,9 +1459,10 @@ function detectFactor_by_gamma(eles_scroll_canvas) {
           }
 
           // ちゃんと因子欄か丸ポチの有無で確認
-          // 因子のまるポチのテンプレート読み込み
-          let tmpl_factor_disc = cv.imread(document.getElementById('tmplFactorDisc'));
-          cv.resize(tmpl_factor_disc, tmpl_factor_disc, new cv.Size(tmp_dic.rect_factor_disc.width, tmp_dic.rect_factor_disc.height), 0, 0, cv.INTER_CUBIC);
+          // 因子のまるポチのテンプレートはキャッシュから取得し、サイズに合わせてresize
+          const tmpl_factor_disc_src = get_tmpl_raw('tmplFactorDisc');
+          let tmpl_factor_disc = new cv.Mat();
+          cv.resize(tmpl_factor_disc_src, tmpl_factor_disc, new cv.Size(tmp_dic.rect_factor_disc.width, tmp_dic.rect_factor_disc.height), 0, 0, cv.INTER_CUBIC);
 
           // 丸ポチ部分でテンプレートマッチ
           // しきい値以上だったら因子名読み込み対象に追加
@@ -1611,21 +1507,31 @@ function detectFactor_by_gamma(eles_scroll_canvas) {
 }
 function calc_color_rate(img_in, hsv_from, hsv_to) {
   let img_rgb = new cv.Mat();
-  cv.inRange(
-    img_in,
-    new cv.Mat(img_in.rows, img_in.cols, img_in.type(), hsv_from),
-    new cv.Mat(img_in.rows, img_in.cols, img_in.type(), hsv_to),
-    img_rgb);
+  let lo = new cv.Mat(img_in.rows, img_in.cols, img_in.type(), hsv_from);
+  let hi = new cv.Mat(img_in.rows, img_in.cols, img_in.type(), hsv_to);
+  cv.inRange(img_in, lo, hi, img_rgb);
+  lo.delete();
+  hi.delete();
 
-  let tmp_sum = 0;
-  for (let i = 0; i < img_rgb.rows; i++) {
-    for (let j = 0; j < img_rgb.cols; j++) {
-      tmp_sum += img_rgb.ucharAt(i, j);
-    }
-  }
-  let val_out = tmp_sum / (255 * img_rgb.rows * img_rgb.cols);
+  const tmp_sum = total_sum_uchar(img_rgb);
+  const val_out = tmp_sum / (255 * img_rgb.rows * img_rgb.cols);
   img_rgb.delete();
-  return val_out
+  return val_out;
+}
+// jpn言語モデルのロードはMB単位で重いので、ワーカは1度作って使い回す
+let _tesseract_worker_promise = null;
+function get_tesseract_worker() {
+  if (!_tesseract_worker_promise) {
+    _tesseract_worker_promise = (async () => {
+      const w = await Tesseract.createWorker({
+        workerPath: "https://unpkg.com/tesseract.js@4.1.1/dist/worker.min.js",
+      });
+      await w.loadLanguage('jpn');
+      await w.initialize('jpn', 3);
+      return w;
+    })();
+  }
+  return _tesseract_worker_promise;
 }
 function ocr_factor_text(eles_scroll_canvas, l_detected_factor) {
   return new Promise(async function(resolve){
@@ -1634,16 +1540,10 @@ function ocr_factor_text(eles_scroll_canvas, l_detected_factor) {
 
     let l_skillnames = Object.keys(dict_skills);
     l_skillnames = l_skillnames.map(d => d.split('')).flat();
-    char_whitelist = [...new Set(l_skillnames)].join('') + '◯〇';
+    let char_whitelist = [...new Set(l_skillnames)].join('') + '◯〇';
     // console.log(char_whitelist);
 
-    const worker = await Tesseract.createWorker({
-      // corePath: '../../node_modules/tesseract.js-core',
-      workerPath: "https://unpkg.com/tesseract.js@4.1.1/dist/worker.min.js",
-      // logger: function(m){console.log(m);}
-    });
-    await worker.loadLanguage('jpn');
-    await worker.initialize('jpn', 3);
+    const worker = await get_tesseract_worker();
     // await worker.setParameters({tessedit_char_whitelist: char_whitelist});
     for (let i = 0; i < l_detected_factor.length; i++) {
       for (let j = 0; j < l_detected_factor[i].length; j++) {
@@ -1687,7 +1587,7 @@ function ocr_factor_text(eles_scroll_canvas, l_detected_factor) {
         }
       }
     }
-    await worker.terminate();
+    // ワーカはキャッシュ。terminateせずに次回呼び出しまで保持
     resolve(l_detected_factor);
   })
 }
