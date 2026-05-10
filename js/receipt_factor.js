@@ -364,10 +364,62 @@ function smoothing_list(l, window_size) {
 }
 function detect_common_scroll_area(l, l_smooth, window_size, mode_xy, thres_v1, thres_v2) {
   let tmp_v1 = l_smooth.findIndex(e => e > thres_v1);
+  let skipped_leading_noise = false;
+  if (mode_xy == 'y' && tmp_v1 == 0) {
+    // PC/Steam backgrounds can animate above a modal. Ignore a tiny leading
+    // diff cluster if a quiet band separates it from the real scroll content.
+    let top_cluster_end = 0;
+    while (top_cluster_end + 1 < l_smooth.length && l_smooth[top_cluster_end + 1] > thres_v1) {
+      top_cluster_end += 1;
+    }
+    if (top_cluster_end < window_size) {
+      let quiet_run = 0;
+      for (let i = top_cluster_end + 1; i < l_smooth.length; i++) {
+        if (l_smooth[i] <= thres_v2) {
+          quiet_run += 1;
+        } else if (quiet_run >= window_size) {
+          if (l_smooth[i] > thres_v1) {
+            tmp_v1 = i;
+            skipped_leading_noise = true;
+            break;
+          }
+        } else {
+          quiet_run = 0;
+        }
+      }
+    }
+  }
+  const tmp_v1_smooth = tmp_v1;
   if (tmp_v1 != -1) {
     tmp_v1 = l.findIndex((e, i) => i >= tmp_v1 && e > thres_v1);
   }
   let tmp_v2 = l_smooth.findLastIndex(e => e > thres_v2);
+  if (skipped_leading_noise && tmp_v1_smooth != -1) {
+    let active_cluster = null;
+    let cluster_for_v1 = null;
+    for (let i = 0; i < l_smooth.length; i++) {
+      if (l_smooth[i] > thres_v2) {
+        if (active_cluster == null) {
+          active_cluster = {'start_i': i, 'end_i': i};
+        } else {
+          active_cluster.end_i = i;
+        }
+      } else if (active_cluster != null) {
+        if (active_cluster.start_i <= tmp_v1_smooth && tmp_v1_smooth <= active_cluster.end_i) {
+          cluster_for_v1 = active_cluster;
+          break;
+        }
+        active_cluster = null;
+      }
+    }
+    if (cluster_for_v1 == null && active_cluster != null &&
+        active_cluster.start_i <= tmp_v1_smooth && tmp_v1_smooth <= active_cluster.end_i) {
+      cluster_for_v1 = active_cluster;
+    }
+    if (cluster_for_v1 != null) {
+      tmp_v2 = cluster_for_v1.end_i;
+    }
+  }
   if (tmp_v2 != -1) {
     tmp_v2 = l.findLastIndex((e, i) =>
       i <= tmp_v2 + window_size &&
