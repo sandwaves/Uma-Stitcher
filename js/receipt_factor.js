@@ -494,7 +494,7 @@ function trim_by_platform(l_mat) {
       // 解像度一致確認
       if (!(Math.min(...l_mat.map((d) => {return d.cols})) == Math.max(...l_mat.map((d) => {return d.cols})) &&
           Math.min(...l_mat.map((d) => {return d.rows})) == Math.max(...l_mat.map((d) => {return d.rows})))) {
-        throw new Error('The loaded images have different resolutions.');
+        throw new Error("These screenshots are different sizes. Use screenshots taken the same way on the same device.");
       }
       // 縦長ならトリミングなし
       if (l_mat[0].cols < l_mat[0].rows) {
@@ -539,7 +539,7 @@ function trim_by_platform(l_mat) {
         console.log(tmp_area_x);
         if (tmp_area_x.v1 == -1) {
           // スクロール範囲が特定出来なかったらエラー終了
-          throw new Error('Could not determine the scroll area. You may have selected the same image twice.');
+          throw new Error("Couldn't find the scrolling part of the screen. Check you haven't added the same screenshot twice.");
         }
         // 取得した範囲の左右にバッファを持たせる
         tmp_x1 = Math.max(0, Math.floor(tmp_area_x.v1 - (tmp_area_x.v2 - tmp_area_x.v1) * trim_width_buffer));
@@ -602,7 +602,7 @@ function detect_rects(img_in) {
 
   // console.log(mv_contours.size(), mv_contours_only_large.size());
   if (mv_contours_only_large.size() == 0) {
-    throw new Error('Could not detect the close button in one of the images.');
+    throw new Error("Couldn't find the Close button in one of the screenshots. Make sure they aren't cropped.");
   };
 
   // 閉じるボタンテンプレ読み込み
@@ -780,7 +780,7 @@ function detect_rects(img_in) {
           0 <= rects.whole.y &&
           rects.whole.x + rects.whole.width <= img_in.cols &&
           rects.whole.y + rects.whole.height <= img_in.rows)) {
-        throw new Error('Could not correctly detect the Uma Musume detail area in one of the images.');
+        throw new Error("Couldn't find the details panel in one of the screenshots. Make sure they aren't cropped.");
         }
         // 輪郭描画
         // let dst = cv.Mat.zeros(img_gray.rows, img_gray.cols, cv.CV_8UC3);
@@ -1297,7 +1297,7 @@ function align_missing_imgs(l_relative_height, l_group, imgs) {
     const n_tgt = imgs.length;
     console.log('位置が取得出来なかった画像を取り込み順に基づいて配置');
     if (l_relative_height.filter((d) => d == null).length) {
-      raiseNormalMsg('Some images could not be aligned by content. They were placed in the order you loaded them.');
+      raiseNormalMsg("Some screenshots didn't overlap, so they were stacked in their numbered order. Check the result.");
       // グループ毎に処理
       [...Array(Math.max(...l_group) + 1).keys()].forEach(function(current_group){
         // 当グループのインデックスを取得
@@ -1399,7 +1399,7 @@ function generateReceipt(imgs, l_group, l_relative_height) {
       });
       // はぐれがいたら末尾にトリミングなしで追加
       if ([...Array(n_tgt).keys()].filter((d) => l_group[d] == current_group && l_relative_height[d] == null).length > 0) {
-        raiseNormalMsg('Some images had no detectable overlap and were concatenated in the order they were loaded.');
+        raiseNormalMsg("Some screenshots didn't overlap, so they were stacked in their numbered order. Check the result.");
         [...Array(n_tgt).keys()].filter((d) => l_group[d] == current_group && l_relative_height[d] == null).forEach(function(i){
           imgs_part.push_back(imgs[i].scroll_full_width);
         });

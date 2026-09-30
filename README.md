@@ -1,7 +1,7 @@
 # Screenshot Stitcher
 
 Joins scrolling screenshots from Uma Musume into one tall image, so you can
-share a full factor, skill, or inheritance list in a single picture. This
+share a full spark, skill, or inheritance list in a single picture. This
 version is adapted for the **English** release of the game.
 
 **Live site:** https://sandwaves.github.io/Uma-Stitcher/
@@ -11,17 +11,19 @@ and there are no analytics.
 
 ## How to use
 
-1. Add your screenshots. You can drag them onto the page, paste them with
-   **Ctrl+V**, or use the file picker.
-2. Drag the thumbnails into top-to-bottom order. Click a thumbnail to see
-   it full-size, or click its **×** to remove it.
-3. Click **Generate**. The stitched image appears below after a few
-   seconds.
-4. Save it as JPG or PNG, or copy it to the clipboard.
+1. Add your screenshots with **Choose screenshots**, by dragging them onto
+   the page, or by pasting with **Ctrl+V**. Click a thumbnail to see it
+   full-size, or its **×** to remove it.
+2. Click **Stitch screenshots**. The stitched image appears below after a
+   few seconds.
+3. Save it with **Save PNG** or **Save JPG**, or use **Copy image**.
 
 ### Options
 
-- **Add skill icons to factors (β)** reads skill names with OCR and adds
+- **Include the top section (name, stats and tabs)** keeps the fixed top
+  part of the screen above the stitched list. Untick it to get only the
+  list.
+- **Add skill icons to sparks (beta)** reads skill names with OCR and adds
   the matching icon next to each one. Names are fuzzy-matched against the
   skill dictionary, so small OCR mistakes still get the right icon.
 - The **theme toggle** in the top-right switches between light and dark,
@@ -37,9 +39,9 @@ and there are no analytics.
   don't crop the images. The tool needs the panel to be in the same place
   in every frame.
 - Keep mouse cursors, notifications, and overlays out of the shots.
-- If two screenshots share no content, the tool can't line them up by
-  content. It stacks them in the order the thumbnails show, so arrange
-  them before you click Generate.
+- Screenshots are matched by where they overlap, so their order usually
+  doesn't matter. Any that can't be matched are stacked in the numbered
+  thumbnail order; use the ‹ › buttons (or drag on desktop) to change it.
 
 ## Running locally
 

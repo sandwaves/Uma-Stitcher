@@ -23,7 +23,7 @@
   <meta property="og:title" content="Screenshot Stitcher">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Screenshot Stitcher">
-  <meta property="og:description" content="Stitch together scrolling screenshots of factor and skill lists from Uma Musume.">
+  <meta property="og:description" content="Turn scrolling Uma Musume screenshots of sparks, skills and more into one image you can share.">
   <meta property="og:url" content="https://sandwaves.github.io/Uma-Stitcher/">
   <meta property="og:image" content="https://sandwaves.github.io/Uma-Stitcher/img/favicon/icon-512.png">
   <meta name="twitter:card" content="summary">
@@ -76,36 +76,41 @@
   <div class="wrapper">
     <article id="detail">
       <section id="top">
+        <p class="intro">Turn a set of scrolling Uma Musume screenshots into one tall image, ready to share.</p>
         <form>
           <div id="dragDropArea">
             <div class="drag-drop-inside">
-              <p class="drag-drop-info">Drop files here</p>
-              <p class="drag-drop-buttons">
-                or <input id="fileInput" type="file" accept="image/*" multiple="multiple" name="photo" onChange="photoPreview(event)">
-              </p>
-              <p id="uiUploadFromClipboard">or <button type="button" id="btnUploadFromClipboard">Paste from clipboard</button></p>
-              <p>* Manually cropped screenshots are not supported. On PC, please use a feature that captures the Uma Musume window automatically, such as Alt+PrintScreen.</p>
+              <p class="drag-drop-info">Add your screenshots</p>
+              <p class="drag-drop-hint">Drop them here, or press Ctrl+V to paste</p>
+              <div class="uploadButtons">
+                <input id="fileInput" class="visually-hidden" type="file" accept="image/*" multiple="multiple" name="photo" onChange="photoPreview(event)">
+                <label for="fileInput" id="btnChooseFiles" class="btn">Choose screenshots</label>
+                <button type="button" id="btnUploadFromClipboard" class="btn weak">Paste from clipboard</button>
+              </div>
             </div>
           </div>
+          <p class="uploadTip">Tip: take full, uncropped screenshots that overlap by a couple of rows. On PC, Alt+Print Screen captures just the game window.</p>
           <div id="PreAlert">
           </div>
           <div id="previewArea">
+            <p id="previewCaption" class="previewCaption hidden"></p>
             <div class="container"></div>
           </div>
           <div id="formOption">
+            <p class="optionsTitle">Options</p>
             <div class="formItem">
               <div class="inputWrap">
                 <ul>
                   <li>
                     <div class="considerWrap">
                       <input type="checkbox" class="checkInput" id="showHeader" checked>
-                      <label class="checkLabel" for="showHeader">Show header</label>
+                      <label class="checkLabel" for="showHeader">Include the top section (name, stats and tabs)</label>
                     </div>
                   </li>
                   <li>
                     <div class="considerWrap">
                       <input type="checkbox" class="checkInput" id="showSkillIcon">
-                      <label class="checkLabel" for="showSkillIcon">Add skill icons to factors (β)</label>
+                      <label class="checkLabel" for="showSkillIcon">Add skill icons to sparks (beta)</label>
                     </div>
                   </li>
                 </ul>
@@ -113,67 +118,59 @@
             </div>
           </div>
           <div class="buttonArea">
-            <button id="btnSubmit" type="button" class="btn disable cvNotReady imgNotReady" name="submit" value="Generate" onclick="generatePhoto();return false;">Generate</button>
-            <button id="btnReset" type="button" class="btn disable weak imgNotReady" name="cancel" value="Reset" onclick="resetPhoto();return false;">Reset</button>
+            <button id="btnSubmit" type="button" class="btn disable cvNotReady imgNotReady" name="submit" onclick="generatePhoto();return false;">Stitch screenshots</button>
+            <button id="btnReset" type="button" class="btn disable weak imgNotReady" name="cancel" onclick="resetPhoto();return false;">Start over</button>
           </div>
         </form>
       </section>
-      <hr>
-      <section id="overview">
+      <section id="overview" class="hidden">
+        <h2 class="resultTitle">Your stitched image</h2>
         <div id="SaveBtnArea" class="buttonArea hidden">
-          <button id="btnSaveJPG" class="btn weak" value="Save as JPG" onclick="SaveOriginal(document.getElementById('canvasOutput'), 'jpg');return false;">Save as JPG</button>
-          <button id="btnSavePNG" class="btn weak" value="Save as PNG" onclick="SaveOriginal(document.getElementById('canvasOutput'), 'png');return false;">Save as PNG</button>
-          <button id="btnSaveClipBoard" class="btn weak" value="Copy to 📋" onclick="SaveToClipBoard(document.getElementById('canvasOutput'));return false;">Copy to 📋</button>
+          <button id="btnSavePNG" class="btn weak" onclick="SaveOriginal(document.getElementById('canvasOutput'), 'png');return false;">Save PNG</button>
+          <button id="btnSaveJPG" class="btn weak" onclick="SaveOriginal(document.getElementById('canvasOutput'), 'jpg');return false;">Save JPG</button>
+          <button id="btnSaveClipBoard" class="btn weak" onclick="SaveToClipBoard(document.getElementById('canvasOutput'));return false;">Copy image</button>
         </div>
-        <p id="outputAreaText" class="overviewTitle">Result will appear here</p>
-        <p id="toggleSizeText" class="overviewTitle hidden">Tap the image to toggle display size</p>
-        <img id="outputImage" class="hidden" alt="Stitched result">
+        <p id="toggleSizeText" class="overviewTitle hidden">Tap the image to zoom in or out.</p>
+        <div id="outputImageWrap">
+          <img id="outputImage" class="hidden" alt="Stitched result">
+        </div>
         <div id="overviewOCRResult" class="hidden">
           <div class="editormd-preview-container">
-            <p class="overviewSubTitle">・Help us improve detection accuracy</p>
-            <p>We're collecting misdetected factor name patterns to improve the skill icon feature.<br>
-            Please copy the detection results from the text box below and report them on <a href="https://github.com/sandwaves/Uma-Stitcher/issues" target="_blank" rel="noopener">GitHub Issues</a>.<br>
-            Your contribution helps us support more receipt factors.</p>
+            <p class="overviewSubTitle">Help improve skill icons</p>
+            <p>These spark names didn't match a skill icon. Race and scenario sparks never have one, but if a skill is missing its icon, copy the list and report it on <a href="https://github.com/sandwaves/Uma-Stitcher/issues" target="_blank" rel="noopener">GitHub</a>.</p>
           </div>
-          <textarea id="outputOCRResult" cols="50" rows="3" onclick="this.select()"></textarea>
+          <textarea id="outputOCRResult" cols="50" rows="3" onclick="this.select()" aria-label="Unmatched spark names"></textarea>
         </div>
       </section>
-      <hr>
       <section id="howto">
-        <details class="collapsible" open>
+        <details class="collapsible">
           <summary><h3>How to use</h3></summary>
         <div class="markdown-body editormd-preview-container" id="memo_text">
-          <p><b>1. Take your screenshots</b><br>
-          ・Scroll through the screen and take screenshots as you go.<br>
-          ・Each screenshot should overlap the next by at least two rows.<br>
-          ・Make sure nothing outside the game window is captured (notifications, taskbars, etc).<br>
-          ・Most scrollable screens are supported, including factor / skill / inheritance / training tabs, finish-order tables, score info, entry lists, and support card lists.</p>
+          <h4>Taking screenshots</h4>
+          <ul>
+            <li>Scroll through the list and take a screenshot each time, overlapping the previous one by at least two rows.</li>
+            <li>Take them all the same way: same device, same window size, and no cropping.</li>
+            <li>Keep notifications, the taskbar and anything outside the game window out of the shot.</li>
+            <li>Most scrolling screens work, such as the Skills, Inspiration and Career Info tabs, race results, entry lists and support card lists.</li>
+          </ul>
 
-          <p><b>2. Load the screenshots</b><br>
-          ・Drag and drop, choose files, or paste from the clipboard (Ctrl+V).<br>
-          ・Drag the previews to reorder them; click one to see it full-size.<br>
-          ・You can load multiple characters at once.<br>
-          ・Tap the ✕ on a preview to remove it.</p>
+          <h4>Stitching and saving</h4>
+          <ul>
+            <li>Screenshots are matched by where they overlap, so their order usually doesn't matter. If some can't be matched, they're stacked in the numbered order. Use ‹ › (or drag on desktop) to change it.</li>
+            <li>You can add screenshots of several characters at once. Each one gets its own column.</li>
+            <li>On iPhone or iPad, long-press the result to save it to Photos.</li>
+          </ul>
 
-          <p><b>3. Tap Generate</b><br>
-          ・Takes anywhere from instant to a few seconds depending on how many images you loaded.</p>
-
-          <p><b>4. Save the result</b><br>
-          ・Tap the output image to switch between full size and fit-to-width.<br>
-          ・Use the JPG / PNG / 📋 buttons to save.<br>
-          ・On iOS, long-press the image to save it to your photo library.<br>
-          ・Reset clears everything so you can start over.</p>
-
-          <p><b>Optional: skill icons (β)</b><br>
-          ・Adds a small skill icon next to each factor.<br>
-          ・Stat-boosting factors (e.g. scenario factors) show a blue icon.<br>
-          ・If the factor name can't be read clearly, [?] shows instead.<br>
-          ・Higher-resolution screenshots give better results — at least 1500px tall is recommended.<br>
-          ・Skill data provided by <a href="https://ウマ娘.攻略.tools/" target="_blank" rel="noopener">U-tools</a>.</p>
+          <h4>Skill icons (beta)</h4>
+          <ul>
+            <li>Adds the matching skill icon next to each skill spark.</li>
+            <li>Sparks without a skill icon, such as race and scenario sparks, get a [?]. So do names that can't be read.</li>
+            <li>Screenshots at least 1500px tall give the best results.</li>
+            <li>Skill data from <a href="https://ウマ娘.攻略.tools/" target="_blank" rel="noopener">U-tools</a>.</li>
+          </ul>
         </div>
         </details>
       </section>
-      <hr>
       <section id="updateLog">
         <details class="collapsible">
           <summary><h3>Update history</h3></summary>
@@ -257,18 +254,13 @@
         </div>
         </details>
       </section>
-      <hr>
     </article>
   </div>
   <footer>
-    <p class="resources">Feedback:
-      <a href="https://github.com/sandwaves/Uma-Stitcher/issues" target="_blank" rel="noopener">GitHub Issues</a>
-    </p>
-    <p class="resources">Icons by:
-      <a href="https://twitter.com/38_3so" target="_blank" rel="noopener">@38_3so</a>
-    </p>
-    <p class="resources">Support the original creator:
-      <a href="https://www.amazon.jp/hz/wishlist/ls/1EJOGGP8S1TS6?ref_=wl_share" target="_blank" rel="noopener">Wishlist</a>
+    <p class="resources">
+      <span><a href="https://github.com/sandwaves/Uma-Stitcher/issues" target="_blank" rel="noopener">Feedback</a></span>
+      <span>Icons by <a href="https://twitter.com/38_3so" target="_blank" rel="noopener">@38_3so</a></span>
+      <span><a href="https://www.amazon.jp/hz/wishlist/ls/1EJOGGP8S1TS6?ref_=wl_share" target="_blank" rel="noopener">Support the original creator</a></span>
     </p>
   </footer>
   <script src="./js/dict_skills.js"></script>

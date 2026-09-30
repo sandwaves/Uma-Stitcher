@@ -186,12 +186,18 @@ header#pageHeader {
   text-align: left;
 }
 section { margin: 1.5rem 0; }
-hr {
-  border: none;
-  height: 0;
-  border-top: 1px solid var(--rule);
-  margin: 1.5rem 0;
-  color: transparent;
+
+/* Hidden but still focusable (the file input is reached via its label) */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ---------- Section heads ---------- */
@@ -220,6 +226,13 @@ h3 {
   padding: 0;
 }
 
+.intro {
+  margin: 0 0 1rem;
+  font-size: 0.98rem;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
 /* ---------- Drop zone ---------- */
 #dragDropArea {
   position: relative;
@@ -236,71 +249,64 @@ h3 {
   border-color: var(--accent);
   border-style: solid;
 }
-.drag-drop-info {
-  font-size: 1.15rem !important;
-  font-weight: 600 !important;
-  color: var(--ink) !important;
-  margin: 0 0 0.35rem !important;
-  line-height: 1.3;
-}
 #dragDropArea p {
   font-size: 0.92rem;
-  font-weight: 400 !important;
-  color: var(--ink-muted) !important;
-  margin: 0.35rem 0 !important;
+  font-weight: 400;
+  color: var(--ink-muted);
+  margin: 0.35rem 0;
 }
-#dragDropArea input[type="file"] {
-  font-family: inherit;
-  font-size: 0.88rem;
-  color: var(--ink-soft);
-  background: transparent;
-  border: none;
-  padding: 0;
-  margin: 0;
-}
-#dragDropArea input[type="file"]::-webkit-file-upload-button,
-#dragDropArea input[type="file"]::file-selector-button {
-  font-family: inherit;
-  font-size: 0.85rem;
-  background: var(--bg-sunken);
+#dragDropArea .drag-drop-info {
+  font-size: 1.15rem;
+  font-weight: 600;
   color: var(--ink);
-  border: 1px solid var(--rule-strong);
-  border-radius: 6px;
-  padding: 0.4rem 0.8rem;
-  margin-right: 0.55rem;
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  margin: 0 0 0.35rem;
+  line-height: 1.3;
 }
-#dragDropArea input[type="file"]::-webkit-file-upload-button:hover,
-#dragDropArea input[type="file"]::file-selector-button:hover {
-  background: var(--bg-elevated);
-  border-color: var(--ink-muted);
-}
-#btnUploadFromClipboard {
-  font-family: inherit;
-  font-size: 0.85rem;
-  background: var(--bg-sunken);
-  color: var(--ink);
-  border: 1px solid var(--rule-strong);
-  border-radius: 6px;
-  padding: 0.4rem 0.8rem;
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
-}
-#btnUploadFromClipboard:hover { background: var(--bg-elevated); border-color: var(--ink-muted); }
-
-/* ---------- Preview strip ---------- */
-#previewArea {
+.uploadButtons {
   display: flex;
-  overflow-x: auto;
-  margin: 0.6rem 0 1rem;
-  padding: 0.3rem 0;
-  scrollbar-width: thin;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-top: 1rem;
 }
-.container { display: flex; gap: 0.5rem; padding: 0.2rem; }
+#btnChooseFiles {
+  background: var(--accent);
+  color: var(--accent-on);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+#btnChooseFiles:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+#fileInput:focus-visible + #btnChooseFiles { outline: 2px solid var(--accent); outline-offset: 2px; }
+.uploadTip {
+  margin: -0.4rem 0 1rem;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  text-align: center;
+}
+/* Drag-and-drop and Ctrl+V don't apply on touch screens */
+@media (hover: none) and (pointer: coarse) {
+  .drag-drop-hint { display: none; }
+  #dragDropArea { padding: 1.4rem 1rem; }
+}
+
+/* ---------- Preview grid ---------- */
+#previewArea { margin: 0.6rem 0 1rem; }
+.previewCaption {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+.previewCaption strong { color: var(--ink); font-weight: 600; }
+.container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.6rem;
+}
 .containerItem {
   position: relative;
-  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   background: var(--bg-elevated);
   padding: 4px;
   border: 1px solid var(--rule);
@@ -313,14 +319,84 @@ h3 {
 .containerItem.dragging { opacity: 0.4; }
 .containerItem.drag-over-before { box-shadow: -3px 0 0 var(--accent), var(--shadow-sm); }
 .containerItem.drag-over-after  { box-shadow:  3px 0 0 var(--accent), var(--shadow-sm); }
-.previewImage {
-  display: block;
-  max-height: 220px;
-  width: auto;
-  margin: 0;
+/* Fixed-height frame so portrait (phone) and landscape (PC) shots line up */
+.thumbFrame {
+  position: relative;
+  height: 140px;
+  background: var(--bg-sunken);
   border-radius: 3px;
+  overflow: hidden;
+}
+.previewImage {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: contain;
+  margin: 0;
   cursor: zoom-in;
   pointer-events: auto;
+}
+.thumbNumber {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 1;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 12px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 24px;
+  text-align: center;
+  pointer-events: none;
+}
+.thumbRemove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--bg);
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.thumbRemove:hover { background: var(--danger); }
+.thumbMove { display: flex; gap: 4px; }
+.thumbMoveBtn {
+  flex: 1;
+  height: 32px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 5px;
+  background: var(--bg-sunken);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.thumbMoveBtn:hover:not(:disabled) { background: var(--bg-elevated); border-color: var(--ink-muted); }
+.thumbMoveBtn:disabled { opacity: 0.35; cursor: default; }
+.thumbRemove:focus-visible,
+.thumbMoveBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The tap flash lingers on a button that becomes disabled by its own tap */
+.thumbRemove,
+.thumbMoveBtn { -webkit-tap-highlight-color: transparent; }
+/* Bigger touch targets on phones and tablets */
+@media (pointer: coarse) {
+  .thumbRemove { width: 40px; height: 40px; top: 0; right: 0; }
+  .thumbMoveBtn { height: 44px; }
 }
 
 /* Lightbox preview */
@@ -343,48 +419,6 @@ h3 {
   border-radius: 4px;
   box-shadow: 0 6px 30px rgba(0, 0, 0, 0.5);
 }
-.containerItem > .functionWrap {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  background: var(--ink);
-  border: 2px solid var(--bg);
-  border-radius: 50%;
-  padding: 0;
-  z-index: 2;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.containerItem > .functionWrap:hover { background: var(--danger); }
-.icon--cross {
-  cursor: pointer;
-  width: 100%;
-  height: 100%;
-  position: relative;
-}
-.icon--cross::after {
-  content: "×";
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: inherit;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1;
-  color: var(--bg);
-  background: none;
-  width: auto;
-  height: auto;
-}
-
 /* ---------- Options ---------- */
 #formOption {
   margin: 0.8rem 0;
@@ -406,6 +440,14 @@ h3 {
   flex: 0 0 auto;
   margin-right: 0.7rem;
   color: var(--ink-soft);
+}
+.optionsTitle {
+  margin: 0 0 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 .inputWrap { display: flex; flex-direction: row; flex-wrap: wrap; }
 .inputWrap ul {
@@ -545,6 +587,12 @@ input[type=checkbox]:checked + .checkLabel::after { opacity: 1; }
   padding-top: 1rem;
   border-top: 1px solid var(--rule);
 }
+.resultTitle {
+  margin: 0 0 0.3rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--ink);
+}
 #SaveBtnArea {
   margin-top: 0.6rem;
   display: flex;
@@ -564,6 +612,10 @@ input[type=checkbox]:checked + .checkLabel::after { opacity: 1; }
   color: var(--ink);
   margin: 0.5rem 0;
 }
+/* Scrolls sideways when the result is shown at actual size, so the page doesn't */
+#outputImageWrap {
+  overflow-x: auto;
+}
 #outputImage {
   max-width: 100%;
   height: auto;
@@ -576,9 +628,11 @@ input[type=checkbox]:checked + .checkLabel::after { opacity: 1; }
   cursor: zoom-in;
 }
 #outputImage.full-width-image {
-  max-width: 100%;
+  max-width: none;
   cursor: zoom-out;
 }
+/* Already shown at actual size: nothing to toggle */
+#outputImage.no-toggle { cursor: default; }
 
 #overviewOCRResult {
   text-align: left;
@@ -622,6 +676,18 @@ input[type=checkbox]:checked + .checkLabel::after { opacity: 1; }
   margin-bottom: 0.2rem;
   font-size: 0.95rem;
 }
+.markdown-body h4 {
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 0.2rem;
+  font-size: 0.95rem;
+}
+.markdown-body ul {
+  list-style: disc;
+  margin: 0 0 0.85rem;
+  padding-left: 1.2rem;
+}
+.markdown-body li { margin: 0.1rem 0; }
 .markdown-body a { color: var(--accent); }
 .markdown-body a:hover { text-decoration: underline; }
 
@@ -678,13 +744,16 @@ footer {
   text-align: center;
 }
 .resources {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.3rem 1.4rem;
   font-size: 0.82rem;
   color: var(--ink-muted);
-  margin: 0.3rem 0;
+  margin: 0;
 }
 .resources a {
   color: var(--ink-soft);
-  margin: 0 0.35rem;
   text-decoration: none;
 }
 .resources a:hover { color: var(--accent); text-decoration: underline; }
@@ -775,6 +844,29 @@ footer {
   .wrapper { padding: 1rem 0.9rem 2rem; }
   .btn { padding: 0.5rem 1rem; }
   #btnSubmit { padding: 0.6rem 1.3rem; }
+
+  /* Action bars pinned to the bottom of the screen: Generate/Reset while screenshots are
+     loaded (until you scroll past the form), and Save/Copy while scrolling the result */
+  #top:has(.containerItem) .buttonArea,
+  #SaveBtnArea {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    flex-wrap: nowrap;
+    margin-left: -0.9rem;
+    margin-right: -0.9rem;
+    padding: 0.6rem 0.9rem calc(0.6rem + env(safe-area-inset-bottom));
+    background: var(--bg);
+    border-top: 1px solid var(--rule);
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+  }
+  #top:has(.containerItem) .buttonArea .btn,
+  #SaveBtnArea .btn { flex: 1; padding-left: 0.5rem; padding-right: 0.5rem; }
+  #top:has(.containerItem) #btnSubmit { flex: 2; }
+  /* Put Save/Copy below the image so the bar follows the result as you scroll it */
+  #overview { display: flex; flex-direction: column; }
+  #SaveBtnArea { order: 1; }
+  #overviewOCRResult { order: 2; }
 }
 
 @media (prefers-reduced-motion: reduce) {

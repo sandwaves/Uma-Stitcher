@@ -27,4 +27,5 @@ input:after {
    -khtml-user-select: initial;
 }
 
-.hidden { display: none; }
+/* !important so ID rules that set display (e.g. #SaveBtnArea) can't un-hide an element */
+.hidden { display: none !important; }

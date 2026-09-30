@@ -1,7 +1,7 @@
 let _errMsgTimer = null;
 let _normalMsgTimer = null;
 function raiseErrMsg(t) {
-  let text = 'An error occurred. Please reload the page.';
+  let text = 'Something went wrong. Please try again.';
   if (!(typeof t === 'undefined')) {
     text = t;
   };
@@ -13,6 +13,12 @@ function raiseErrMsg(t) {
     el.classList.add('hidden');
     _errMsgTimer = null;
   }, Math.max(text.length * 120, 5000));
+};
+// A leftover error shouldn't sit on top of a result that worked
+function clearErrMsg() {
+  if (_errMsgTimer !== null) clearTimeout(_errMsgTimer);
+  _errMsgTimer = null;
+  document.getElementById('errMsg').classList.add('hidden');
 };
 function raiseNormalMsg(t) {
   let text = '';
@@ -53,9 +59,42 @@ function resetCanvas() {
 };
 function deletePhoto(e) {
   e.target.closest('.containerItem').remove();
+  renumberPhotos();
   if (document.getElementsByClassName('containerItem').length == 0) {
     manageBtnStatus('addImgNotReady');
   }
+};
+// Stitch order is the DOM order, so number the cards and enable/disable move buttons to match
+function renumberPhotos() {
+  const items = document.querySelectorAll('.containerItem');
+  const caption = document.getElementById('previewCaption');
+  caption.classList.toggle('hidden', items.length === 0);
+  caption.innerHTML = '<strong>' + items.length + (items.length === 1 ? ' screenshot' : ' screenshots') + '</strong>'
+    + ' · matched by where they overlap. Any that can\'t be matched are stacked in this order.';
+  items.forEach(function(item, i) {
+    const n = i + 1;
+    item.querySelector('.thumbNumber').textContent = n;
+    item.querySelector('.previewImage').setAttribute('alt', 'Screenshot ' + n);
+    item.querySelector('.thumbRemove').setAttribute('aria-label', 'Remove screenshot ' + n);
+    const earlier = item.querySelector('.thumbMoveBtn[data-dir="-1"]');
+    const later = item.querySelector('.thumbMoveBtn[data-dir="1"]');
+    earlier.setAttribute('aria-label', 'Move screenshot ' + n + ' earlier');
+    later.setAttribute('aria-label', 'Move screenshot ' + n + ' later');
+    earlier.disabled = (i === 0);
+    later.disabled = (i === items.length - 1);
+  });
+};
+function movePhoto(e) {
+  const btn = e.currentTarget;
+  const item = btn.closest('.containerItem');
+  if (btn.dataset.dir === '-1' && item.previousElementSibling) {
+    item.parentNode.insertBefore(item, item.previousElementSibling);
+  } else if (btn.dataset.dir === '1' && item.nextElementSibling) {
+    item.parentNode.insertBefore(item.nextElementSibling, item);
+  }
+  renumberPhotos();
+  // Moving the node drops focus; keep it on the same button (or its twin if this one is now disabled)
+  (btn.disabled ? item.querySelector('.thumbMoveBtn:not(:disabled)') : btn)?.focus();
 };
 function addPhoto(e) {
   var preview = document.getElementsByClassName('container')[0];
@@ -64,14 +103,21 @@ function addPhoto(e) {
   divContainerItem.setAttribute('draggable', 'true');
   attachReorderHandlers(divContainerItem);
 
-  var divFunctionWrap = document.createElement('div');
-  divFunctionWrap.setAttribute('class', 'functionWrap');
-  divContainerItem.appendChild(divFunctionWrap);
+  var divFrame = document.createElement('div');
+  divFrame.setAttribute('class', 'thumbFrame');
+  divContainerItem.appendChild(divFrame);
 
-  var divIconCross = document.createElement('div');
-  divIconCross.setAttribute('class', 'icon--cross');
-  divIconCross.addEventListener('click', deletePhoto, false);
-  divFunctionWrap.appendChild(divIconCross);
+  var spanNumber = document.createElement('span');
+  spanNumber.setAttribute('class', 'thumbNumber');
+  spanNumber.setAttribute('aria-hidden', 'true');
+  divFrame.appendChild(spanNumber);
+
+  var btnRemove = document.createElement('button');
+  btnRemove.setAttribute('type', 'button');
+  btnRemove.setAttribute('class', 'thumbRemove');
+  btnRemove.textContent = '×';
+  btnRemove.addEventListener('click', deletePhoto, false);
+  divFrame.appendChild(btnRemove);
 
   var img = document.createElement('img');
   img.setAttribute('class', 'previewImage');
@@ -81,8 +127,23 @@ function addPhoto(e) {
   img.addEventListener('click', function() {
     openPreviewModal(img.getAttribute('src'));
   });
-  divContainerItem.appendChild(img);
+  divFrame.appendChild(img);
+
+  var divMove = document.createElement('div');
+  divMove.setAttribute('class', 'thumbMove');
+  [['-1', '‹'], ['1', '›']].forEach(function(d) {
+    var btnMove = document.createElement('button');
+    btnMove.setAttribute('type', 'button');
+    btnMove.setAttribute('class', 'thumbMoveBtn');
+    btnMove.dataset.dir = d[0];
+    btnMove.textContent = d[1];
+    btnMove.addEventListener('click', movePhoto, false);
+    divMove.appendChild(btnMove);
+  });
+  divContainerItem.appendChild(divMove);
+
   preview.appendChild(divContainerItem);
+  renumberPhotos();
 };
 
 // Drag-and-drop reorder for preview items
@@ -127,6 +188,7 @@ function attachReorderHandlers(item) {
       item.parentNode.insertBefore(_draggedItem, item.nextSibling);
     }
     item.classList.remove('drag-over-before', 'drag-over-after');
+    renumberPhotos();
   });
 }
 
@@ -166,7 +228,7 @@ async function addPhotoFromClipBoard() {
       }
     }
     if (l_image_index.length == 0) {
-      raiseErrMsg('No image found in the clipboard.');
+      raiseErrMsg("There's no image on your clipboard. Copy a screenshot first, then try again.");
       return;
     }
     changePercentage(0);
@@ -179,7 +241,7 @@ async function addPhotoFromClipBoard() {
         manageBtnStatus('removeImgNotReady');
         changePercentage(100);
         if (had_error) {
-          raiseErrMsg('Some clipboard images could not be read.');
+          raiseErrMsg("Some images on your clipboard couldn't be read.");
         }
       }
     };
@@ -202,11 +264,23 @@ async function addPhotoFromClipBoard() {
     }
   } catch(e) {
     console.log(e);
-    raiseErrMsg('Could not read an image from the clipboard. Your browser may not be supported.');
+    raiseErrMsg("Couldn't read your clipboard. Your browser may block it, so try Choose screenshots instead.");
   }
+};
+// Only offer the size toggle when the result is scaled down to fit the page
+function updateOutputImageToggle() {
+  const outputImage = document.getElementById('outputImage');
+  if (outputImage.classList.contains('hidden') || !outputImage.naturalWidth) return;
+  const s = getComputedStyle(outputImage);
+  const chrome = parseFloat(s.paddingLeft) + parseFloat(s.paddingRight) + parseFloat(s.borderLeftWidth) + parseFloat(s.borderRightWidth);
+  const scalable = outputImage.naturalWidth + chrome > document.getElementById('outputImageWrap').clientWidth;
+  outputImage.classList.toggle('no-toggle', !scalable);
+  if (!scalable) outputImage.classList.remove('full-width-image');
+  document.getElementById('toggleSizeText').classList.toggle('hidden', !scalable);
 };
 function toggleOutputImageSize(e) {
   let outputImage = document.getElementById('outputImage');
+  if (outputImage.classList.contains('no-toggle')) return;
   if (outputImage.classList.contains('full-width-image')) {
     outputImage.classList.remove('full-width-image');
   } else {
@@ -419,7 +493,7 @@ function photoPreview(event, fs = null) {
     if (cnt_done == files.length) {
       manageBtnStatus('removeImgNotReady');
       if (had_error) {
-        raiseErrMsg('Some images could not be read.');
+        raiseErrMsg("Some files couldn't be opened. Make sure they're images (PNG or JPG).");
       }
     }
   };
@@ -442,11 +516,11 @@ async function generatePhoto() {
     // なんか長辺が2175pxより大きいとMatchShapesでエラーになるので予め小さくしとく
     const limit_px = 2175;
     if (document.getElementById('btnSubmit').classList.contains('imgNotReady')) {
-      throw new Error('No images have been loaded.');
+      throw new Error('Add some screenshots first.');
     } else if (document.getElementById('btnSubmit').classList.contains('cvNotReady')) {
-      throw new Error('The library has not finished loading yet.');
+      throw new Error('Still loading. Try again in a few seconds.');
     } else if (!('findLastIndex' in Array.prototype)) {
-      throw new Error('Your browser is missing required features. Please update to the latest version. On iPhone/iPad, please update iOS to 15.4 or later.');
+      throw new Error('Your browser is too old for this page. Update it and try again (on iPhone or iPad, iOS 15.4 or later).');
     }
     // ローディング開始
     changePercentage(0);
@@ -508,7 +582,7 @@ async function generatePhoto() {
       await repaint();
     }
     if (did_scbar_fallback) {
-      raiseNormalMsg('Some sections were simply concatenated based on scrollbar position.');
+      raiseNormalMsg('Some screenshots were placed using the scrollbar position. Check the joins in the result.');
     }
     arr_val.forEach(function(r){console.log(r)});
     arr_loc.forEach(function(r){console.log(r)});
@@ -556,11 +630,15 @@ async function generatePhoto() {
     outputImage.classList.remove('hidden');
     // ローディング解除
     changePercentage(100);
+    clearErrMsg();
     // 保存ボタンを出してスクロール
     document.getElementById('SaveBtnArea').classList.remove('hidden');
-    document.getElementById('outputAreaText').classList.add('hidden');
+    document.getElementById('overview').classList.remove('hidden');
     document.getElementById('toggleSizeText').classList.remove('hidden');
-    document.getElementById('overview').scrollIntoView({behavior : 'smooth', block : 'start'});
+    // Wait for the image to decode so the page is tall enough to scroll the result to the top
+    outputImage.decode().catch(function(){}).then(function() {
+      document.getElementById('overview').scrollIntoView({behavior : 'smooth', block : 'start'});
+    });
     // メモリ解放
     l_mat.forEach(function(m){m.delete();});
     // tmp_l_mat.forEach(function(m){m.delete();});
@@ -574,7 +652,13 @@ async function generatePhoto() {
     });
   } catch(e) {
     console.log(e);
-    raiseErrMsg(e.message);
+    // Plain Errors are our own user-facing messages. Anything else (OpenCV throws a bare
+    // number, or a TypeError from an unexpected layout) means the stitch itself failed.
+    if (e instanceof Error && e.constructor === Error) {
+      raiseErrMsg(e.message);
+    } else {
+      raiseErrMsg("Couldn't stitch these screenshots. Check they're from the same screen, taken the same way, and overlap each other.");
+    }
     document.getElementById('loading').classList.add('hidden');
   } finally {
     // tmpCanvasScrolls の中身は途中失敗でも必ず掃除する（次回 Generate に持ち越さない）
@@ -589,13 +673,14 @@ async function generatePhoto() {
 function resetPhoto() {
   try {
     if (document.getElementById('btnReset').classList.contains('imgNotReady') && !document.getElementById('canvasOutput')) {
-      throw new Error('No images have been loaded.');
+      throw new Error('Nothing to clear yet.');
     }
     // プレビュー画像を全て削除
     const preview = document.getElementsByClassName('container')[0];
     while (preview.firstChild) {
       preview.removeChild(preview.firstChild);
     }
+    renumberPhotos();
     // 出力Canvasを削除
     const canvasOutput = document.getElementById('canvasOutput');
     if (canvasOutput) {
@@ -610,7 +695,7 @@ function resetPhoto() {
     }
     // 保存ボタン群を隠してプレースホルダ文言を再表示
     document.getElementById('SaveBtnArea').classList.add('hidden');
-    document.getElementById('outputAreaText').classList.remove('hidden');
+    document.getElementById('overview').classList.add('hidden');
     document.getElementById('toggleSizeText').classList.add('hidden');
     // OCR結果欄をクリアして隠す
     const ocrResult = document.getElementById('overviewOCRResult');
@@ -665,13 +750,13 @@ function SaveOriginal(canvas_src, ext){
   //アンカータグ経由でダウンロード
   switch (ext) {
     case 'jpg':
-      GeneratedDownloadAnker(canvas_out.toDataURL('image/jpeg', 0.95), 'receipt_' + str_dt + '.jpg');
+      GeneratedDownloadAnker(canvas_out.toDataURL('image/jpeg', 0.95), 'stitched_' + str_dt + '.jpg');
       break;
     case 'png':
-      GeneratedDownloadAnker(canvas_out.toDataURL('image/png'), 'receipt_' + str_dt + '.png');
+      GeneratedDownloadAnker(canvas_out.toDataURL('image/png'), 'stitched_' + str_dt + '.png');
       break;
     default:
-      GeneratedDownloadAnker(canvas_out.toDataURL('image/jpeg', 0.95), 'receipt_' + str_dt + '.jpg');
+      GeneratedDownloadAnker(canvas_out.toDataURL('image/jpeg', 0.95), 'stitched_' + str_dt + '.jpg');
   };
   if (!document.getElementById('overviewOCRResult').classList.contains('hidden')) {
     document.getElementById('overviewOCRResult').scrollIntoView({behavior : 'smooth', block : 'start'});
@@ -686,10 +771,10 @@ function SaveToClipBoard(canvas_src) {
         'image/png': blob
       });
       await navigator.clipboard.write([item]);
-      raiseNormalMsg('Copied to clipboard.');
+      raiseNormalMsg('Image copied.');
     } catch(e) {
       console.log(e);
-      raiseErrMsg('Could not copy to the clipboard. Your browser may not be supported.');
+      raiseErrMsg("Couldn't copy the image. Your browser may not allow it, so use Save PNG instead.");
     }
   });
 }
@@ -714,6 +799,8 @@ window.onload = function () {
   document.getElementById('btnUploadFromClipboard').addEventListener('click', addPhotoFromClipBoard, false);
   shortcut.add('Ctrl+V', addPhotoFromClipBoard, {});
   document.getElementById('outputImage').addEventListener('click', toggleOutputImageSize, false);
+  document.getElementById('outputImage').addEventListener('load', updateOutputImageToggle, false);
+  window.addEventListener('resize', updateOutputImageToggle, false);
   // Esc closes the preview lightbox
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') closePreviewModal();
