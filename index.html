@@ -15,32 +15,28 @@
       }
     })();
   </script>
-  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#efe6d3" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#16120e" media="(prefers-color-scheme: dark)">
   <title>Screenshot Stitcher</title>
   <meta property="og:title" content="Screenshot Stitcher">
-  <meta property="og:type" content="article">
+  <meta property="og:type" content="website">
   <meta property="og:site_name" content="Screenshot Stitcher">
   <meta property="og:description" content="Stitch together scrolling screenshots of factor and skill lists from Uma Musume.">
   <meta property="og:url" content="https://sandwaves.github.io/Uma-Stitcher/">
   <meta property="og:image" content="https://sandwaves.github.io/Uma-Stitcher/img/favicon/icon-512.png">
-  <meta name="twitter:card" content="photo">
+  <meta name="twitter:card" content="summary">
   <!-- favicon -->
   <link rel="icon" href="./favicon.ico" sizes="32x32"><!-- 32×32 -->
   <link rel="icon" href="./img/favicon/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./img/favicon/apple-touch-icon.png"><!-- 180×180 -->
   <link rel="manifest" href="./img/favicon/manifest.webmanifest">
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- CSS -->
   <link rel="stylesheet" href="./css/reset.css" type="text/css">
   <link rel="stylesheet" href="./css/common.css" type="text/css">
   <link rel="stylesheet" href="./css/base.css" type="text/css">
-  <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+  <script defer src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
 </head>
 <body class="body">
   <!-- Loading screen -->
@@ -74,19 +70,18 @@
     </div>
   </header>
   <div class="toolbar">
-    <div id="errMsg" class="message hidden"></div>
-    <div id="normalMsg" class="message hidden"></div>
+    <div id="errMsg" class="message hidden" role="alert"></div>
+    <div id="normalMsg" class="message hidden" role="status"></div>
   </div>
   <div class="wrapper">
     <article id="detail">
       <section id="top">
-        <form method="post" enctype="multipart/form-data">
+        <form>
           <div id="dragDropArea">
             <div class="drag-drop-inside">
               <p class="drag-drop-info">Drop files here</p>
-              <p></p>
               <p class="drag-drop-buttons">
-                or <input id="fileInput" type="file" accept="image/*" multiple="multiple" value="Choose files" name="photo" onChange="photoPreview(event)">
+                or <input id="fileInput" type="file" accept="image/*" multiple="multiple" name="photo" onChange="photoPreview(event)">
               </p>
               <p id="uiUploadFromClipboard">or <button type="button" id="btnUploadFromClipboard">Paste from clipboard</button></p>
               <p>* Manually cropped screenshots are not supported. On PC, please use a feature that captures the Uma Musume window automatically, such as Alt+PrintScreen.</p>
@@ -95,13 +90,10 @@
           <div id="PreAlert">
           </div>
           <div id="previewArea">
-            <div class="container">
-              <!-- <div class="containerItem"><div class="functionWrap"><div class="icon--cross"></div></div><img class="previewImage" src="./img/ss/01803.png"></div> -->
-            </div>
+            <div class="container"></div>
           </div>
           <div id="formOption">
             <div class="formItem">
-              <!-- <label>Options</label> -->
               <div class="inputWrap">
                 <ul>
                   <li>
@@ -116,12 +108,6 @@
                       <label class="checkLabel" for="showSkillIcon">Add skill icons to factors (β)</label>
                     </div>
                   </li>
-                  <!-- <li>
-                    <div class="considerWrap">
-                      <input type="checkbox" class="checkInput" id="considerEquips">
-                      <label class="checkLabel" for="considerEquips">Close button</label>
-                    </div>
-                  </li> -->
                 </ul>
               </div>
             </div>
@@ -141,7 +127,7 @@
         </div>
         <p id="outputAreaText" class="overviewTitle">Result will appear here</p>
         <p id="toggleSizeText" class="overviewTitle hidden">Tap the image to toggle display size</p>
-        <img id="outputImage" class="hidden" src="">
+        <img id="outputImage" class="hidden" alt="Stitched result">
         <div id="overviewOCRResult" class="hidden">
           <div class="editormd-preview-container">
             <p class="overviewSubTitle">・Help us improve detection accuracy</p>
@@ -373,7 +359,7 @@
       <img id="skillIcon3001141" src="./img/skill_icons/3001141.webp">
       <img id="skillIcon3001151" src="./img/skill_icons/3001151.webp">
       <img id="skillIcon3001191" src="./img/skill_icons/3001191.webp">
-      <img id="skillIcon3002121" src="./img/skill_icons/3002131.webp">
+      <img id="skillIcon3002121" src="./img/skill_icons/3002121.webp">
       <img id="skillIcon3002131" src="./img/skill_icons/3002131.webp">
       <img id="skillIcon3002141" src="./img/skill_icons/3002141.webp">
       <img id="skillIcon3002151" src="./img/skill_icons/3002151.webp">

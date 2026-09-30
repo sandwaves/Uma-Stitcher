@@ -604,7 +604,7 @@ function resetPhoto() {
     // 出力画像を非表示にしてsrcを破棄（メモリ解放）
     const outputImage = document.getElementById('outputImage');
     if (outputImage) {
-      outputImage.src = '';
+      outputImage.removeAttribute('src');
       outputImage.classList.add('hidden');
       outputImage.classList.remove('full-width-image');
     }
