@@ -4,12 +4,15 @@ A browser-based tool that joins together scrolling screenshots from the
 Uma Musume game into a single image — useful for sharing factor / skill
 / inheritance lists in one shot.
 
-This is an English fork of [lt900ed/receipt_factor](https://github.com/lt900ed/receipt_factor),
-with the UI translated and several rewrites focused on robustness, memory
-behavior, performance, and PC/Steam screenshot support.
+This project is a fork of [daftuyda/Stitcher](https://github.com/daftuyda/Stitcher),
+which is itself an English fork of
+[lt900ed/receipt_factor](https://github.com/lt900ed/receipt_factor).
+It adapts the tool to the **English version** of the game: English OCR,
+an English skill dictionary with fuzzy matching, and the matching icon
+set. See [Fork lineage](#fork-lineage) below.
 
-Everything runs client-side. No uploads, no server, no analytics beyond
-the upstream Google Tag.
+Everything runs client-side. No uploads, no server, no analytics (the
+upstream Google Tag has been removed).
 
 ## Using it
 
@@ -22,9 +25,9 @@ the upstream Google Tag.
 5. Save as JPG/PNG, or copy to the clipboard.
 
 Optional **Add skill icons (β)** annotates the result with skill icons
-detected via OCR (Tesseract.js, Japanese model). This only matches
-against the Japanese game UI, so it is most useful for JP-mobile
-screenshots.
+detected via OCR (Tesseract.js, English model). Skill names are matched
+against the English skill dictionary with fuzzy matching, so minor OCR
+mistakes still resolve to the right icon.
 
 The **theme toggle** in the top-right switches between light and dark.
 The choice is persisted in `localStorage`.
@@ -54,16 +57,15 @@ The choice is persisted in `localStorage`.
 ├── js/
 │   ├── base.js            # UI wiring, drag/drop, lightbox, theme toggle, generatePhoto
 │   ├── receipt_factor.js  # the main stitching pipeline (OpenCV.js)
-│   ├── dict_skills.js     # JP skill name → icon ID dictionary (used by skill-icon mode)
+│   ├── dict_skills.js     # English skill name → icon ID dictionary (used by skill-icon mode)
 │   ├── race_factors.js    # JP race name reference data
 │   ├── regexps.js         # regex passes used in OCR text normalization
 │   ├── shortcut.js        # global keyboard shortcut helper
 │   └── opencv.js          # bundled OpenCV.js
-├── img/
-│   ├── tmpl_*.png         # template images (JP UI) for layout detection
-│   ├── skill_icons/       # icons used by the β skill-icon overlay
-│   └── ...
-└── source/                # snapshot of the original repo, kept for reference
+└── img/
+    ├── tmpl_*.png         # template images (JP UI) for layout detection
+    ├── skill_icons/       # icons used by the β skill-icon overlay
+    └── ...
 ```
 
 ## Running locally
@@ -85,13 +87,39 @@ There's no build step. Edit the files and reload.
 `node --check js/base.js js/receipt_factor.js` is enough to catch syntax
 errors.
 
-## What's different from upstream
+## Fork lineage
+
+1. [lt900ed/receipt_factor](https://github.com/lt900ed/receipt_factor) —
+   the original tool, for the Japanese version of the game.
+2. [daftuyda/Stitcher](https://github.com/daftuyda/Stitcher) — English
+   UI, rewritten interface, memory/performance fixes, and PC/Steam
+   screenshot support.
+3. This repo — adapts skill recognition to the English game (below).
+
+Nearly all of the stitching pipeline and the UI rewrite come from the two
+projects above; full credit to their authors.
+
+## What's different in this fork
+
+Compared with `daftuyda/Stitcher`:
+- OCR runs with the Tesseract **English** model instead of Japanese.
+- `dict_skills.js` is keyed by English skill names.
+- `regexps.js` was replaced with light English cleanup (whitespace,
+  quotes, `○` / `◎` / `×` marker fixes, common OCR confusions).
+- Skill names are snapped to the closest dictionary entry using
+  Levenshtein distance, so small OCR errors still get the right icon. The
+  aptitude marker must match exactly.
+- Added the missing English skill icons; a skill whose icon element is
+  missing now falls back to the "unknown" icon instead of throwing.
+- Removed the upstream Google Analytics tag and updated the site metadata
+  and links for this repo.
+
+## What's different from the original (via daftuyda/Stitcher)
 
 Translated:
 - All UI strings, error messages, and instructions translated to English.
-- The skill name dictionary, race data, OCR regex, and JP UI templates
-  are intentionally **not** translated — they're matching keys for
-  Japanese game text, not user-facing copy.
+- The race data and the JP UI templates are still Japanese matching keys
+  (`race_factors.js` is reference data only and is not used by the app).
 
 Rewritten / fixed:
 - Clean utility UI with a light/dark theme toggle.
@@ -101,7 +129,7 @@ Rewritten / fixed:
   use-after-free, removed double-frees.
 - Performance pass: replaced five per-pixel `ucharAt` loops with bulk
   reads via `mat.data`, cached decoded template Mats, cached the
-  Tesseract worker so its Japanese model loads once per session.
+  Tesseract worker so its OCR model loads once per session.
 - Stricter PC/Steam matching: tighter panel crop, less noise-sensitive
   diff masks, stricter overlap-region verification, minimum-overlap-size
   rule that rejects spurious header-only matches.
@@ -119,6 +147,9 @@ versioned list (Ver4.01 onwards covers this fork).
 
 - Original tool: [lt900ed](https://twitter.com/lt900ed) — see
   [receipt_factor](https://github.com/lt900ed/receipt_factor).
+- English fork this project is based on:
+  [daftuyda/Stitcher](https://github.com/daftuyda/Stitcher) — English UI,
+  rewritten interface, robustness and PC/Steam work.
 - Skill icons & data: [U-tools](https://ウマ娘.攻略.tools/).
 - OpenCV.js, Tesseract.js — bundled.
 - Original spinner: SpinKit (`sk-fading-circle`).

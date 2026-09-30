@@ -1578,8 +1578,8 @@ function get_tesseract_worker() {
       const w = await Tesseract.createWorker({
         workerPath: "https://unpkg.com/tesseract.js@4.1.1/dist/worker.min.js",
       });
-      await w.loadLanguage('jpn');
-      await w.initialize('jpn', 3);
+      await w.loadLanguage('eng');
+      await w.initialize('eng', 3);
       return w;
     })();
   }
@@ -1619,6 +1619,11 @@ function ocr_factor_text(eles_scroll_canvas, l_detected_factor) {
           tmpCanvasElement.remove();
           // console.log(text);
           tmp_factor['factor_text'] = normalize_text(data.data.text, regexps);
+          // exact match failed -> snap to the closest known skill name (if close enough)
+          const matched_skill = find_closest_skill(tmp_factor.factor_text);
+          if (matched_skill !== null) {
+            tmp_factor['factor_text'] = matched_skill;
+          }
 
           //アイコン描画
           let skill_icon_id = '';
@@ -1627,10 +1632,10 @@ function ocr_factor_text(eles_scroll_canvas, l_detected_factor) {
           } else {
             skill_icon_id = 'skillIconUnknown';
           }
-          // console.log(skill_icon_id);
-          // console.log(tmp_factor.rect_factor_icon);
+          // dict entry without a matching <img> -> fall back to the unknown icon instead of throwing
+          const ele_skill_icon = document.getElementById(skill_icon_id) || document.getElementById('skillIconUnknown');
           l_scroll_canvas[i].getContext('2d').drawImage(
-            document.getElementById(skill_icon_id),
+            ele_skill_icon,
             tmp_factor.rect_factor_icon.left,
             tmp_factor.rect_factor_icon.top,
             tmp_factor.rect_factor_icon.width,
@@ -1642,6 +1647,74 @@ function ocr_factor_text(eles_scroll_canvas, l_detected_factor) {
     // ワーカはキャッシュ。terminateせずに次回呼び出しまで保持
     resolve(l_detected_factor);
   })
+}
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  let prev = Array.from({length: b.length + 1}, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(
+        prev[j] + 1,
+        cur[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+// aptitude marker (○ ◎ ×) is only 1 char away from its siblings, so it is split off
+// and must match exactly; only the skill name part is matched fuzzily
+const SKILL_MARKER_RE = /\s*([○◎×])$/;
+function split_skill_marker(s) {
+  const m = s.match(SKILL_MARKER_RE);
+  return m ? {base: s.slice(0, m.index), marker: m[1]} : {base: s, marker: ''};
+}
+let _skill_index = null;
+function get_skill_index() {
+  if (!_skill_index) {
+    _skill_index = Object.keys(dict_skills).map(key => {
+      const {base, marker} = split_skill_marker(key);
+      return {key, base, lower: base.toLowerCase(), marker, iconId: dict_skills[key].iconId};
+    });
+  }
+  return _skill_index;
+}
+// Returns the dict_skills key closest to `text`, or null if there is no confident match.
+// Exact matches are returned as-is. Ambiguous ties between different icons return null.
+function find_closest_skill(text) {
+  if (text === '' || text in dict_skills) return text === '' ? null : text;
+  const {base, marker} = split_skill_marker(text);
+  const lower = base.toLowerCase();
+  // allow ~20% of characters to be wrong, at least 1 edit for anything but very short names
+  const max_dist = base.length < 4 ? 0 : Math.max(1, Math.floor(base.length * 0.2));
+  let best = null;
+  let best_dist = Infinity;
+  let ambiguous = false;
+  for (const cand of get_skill_index()) {
+    if (cand.marker !== marker) continue;
+    if (Math.abs(cand.lower.length - lower.length) > max_dist) continue;
+    const d = levenshtein(lower, cand.lower);
+    if (d > max_dist) continue;
+    if (d < best_dist) {
+      best = cand;
+      best_dist = d;
+      ambiguous = false;
+    } else if (d === best_dist && best !== null && cand.iconId !== best.iconId) {
+      // 'Best Day Ever' vs 'Best day ever' style pairs: prefer the case-sensitive closer one
+      const d_best = levenshtein(base, best.base);
+      const d_cand = levenshtein(base, cand.base);
+      if (d_cand < d_best) {
+        best = cand;
+      } else if (d_cand === d_best) {
+        ambiguous = true;
+      }
+    }
+  }
+  return best !== null && !ambiguous ? best.key : null;
 }
 function normalize_text(text, regexps) {
   if (typeof text === 'undefined') {
